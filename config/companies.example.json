@@ -1,0 +1,27 @@
+{
+  "companies": [
+    {
+      "id": "company-a",
+      "name": "Company A",
+      "emailDomain": "companya.com",
+      "myEmail": "me@companya.com",
+      "role": "CEO / Managing Director",
+      "tone": "professional",
+      "keyContacts": [
+        { "name": "Jane Smith", "email": "jane@companya.com", "role": "CFO" }
+      ],
+      "priorityKeywords": ["urgent", "board", "deadline"]
+    },
+    {
+      "id": "company-b",
+      "name": "Company B",
+      "emailDomain": "companyb.com",
+      "myEmail": "me@companyb.com",
+      "role": "Partner",
+      "tone": "casual-professional",
+      "keyContacts": [],
+      "priorityKeywords": ["client", "proposal", "contract"]
+    }
+  ],
+  "defaultCompany": "company-a"
+}

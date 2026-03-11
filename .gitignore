@@ -1,0 +1,34 @@
+# Sensitive configuration
+config/companies.json
+config/*.json
+!config/*.example.json
+
+# Local working data
+data/
+
+# Environment files
+.env
+.env.*
+*.env
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+*.code-workspace
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.bak
