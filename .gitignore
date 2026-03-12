@@ -2,6 +2,7 @@
 config/companies.json
 config/*.json
 !config/*.example.json
+!config/prefs.json
 
 # Local working data
 data/
