@@ -5,12 +5,27 @@
       "name": "Company A",
       "emailDomain": "companya.com",
       "myEmail": "me@companya.com",
-      "role": "CEO / Managing Director",
+      "role": "Managing Director",
+      "description": "Brief description of this company",
       "tone": "professional",
+      "purpose": "What this inbox is for and how to handle it.",
       "keyContacts": [
-        { "name": "Jane Smith", "email": "jane@companya.com", "role": "CFO" }
+        { "name": "Jane Smith", "role": "CFO", "priority": "high" }
       ],
-      "priorityKeywords": ["urgent", "board", "deadline"]
+      "prioritySenders": [
+        { "type": "domain", "value": "companya.com", "label": "Internal staff" },
+        { "type": "name", "value": "Jane Smith", "label": "CFO" }
+      ],
+      "urgencyRules": {
+        "currentRule": "Description of what counts as urgent",
+        "flags": ["urgent", "deadline", "request", "please review"]
+      },
+      "downrank": ["bulk email", "newsletters", "marketing", "unsubscribe"],
+      "outputs": {
+        "primary": "Executive summary of emails requiring action",
+        "secondary": "News and market summary",
+        "planned": ["Draft responses"]
+      }
     },
     {
       "id": "company-b",
@@ -18,9 +33,23 @@
       "emailDomain": "companyb.com",
       "myEmail": "me@companyb.com",
       "role": "Partner",
+      "description": "Brief description of this company",
       "tone": "casual-professional",
+      "purpose": "What this inbox is for and how to handle it.",
       "keyContacts": [],
-      "priorityKeywords": ["client", "proposal", "contract"]
+      "prioritySenders": [
+        { "type": "domain", "value": "companyb.com", "label": "Internal staff" }
+      ],
+      "urgencyRules": {
+        "currentRule": "Description of what counts as urgent",
+        "flags": ["client", "proposal", "contract", "closing"]
+      },
+      "downrank": ["bulk email", "solicitations", "marketing", "unsubscribe"],
+      "outputs": {
+        "primary": "Executive summary of emails requiring action",
+        "secondary": "News and market summary",
+        "planned": ["Draft responses"]
+      }
     }
   ],
   "defaultCompany": "company-a"
