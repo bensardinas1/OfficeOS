@@ -1,39 +1,63 @@
-Run a full inbox triage across all configured companies. $ARGUMENTS
+Run a full inbox triage across all configured accounts. $ARGUMENTS
 
-If $ARGUMENTS specifies one or more company IDs (comma-separated), triage only those.
-Otherwise, triage every company in `config/companies.json`.
+If $ARGUMENTS specifies one or more account IDs (comma-separated), triage only those.
+Otherwise, triage every account in `config/companies.json`.
 
-1. Load `config/companies.json` and `config/prefs.json`.
+1. Load `config/companies.json`, `config/account-types.json`, and `config/prefs.json`.
 
-2. For each company, fetch emails sequentially (to avoid auth token conflicts):
-   ```
-   node scripts/fetch-emails.js {company.id} 24 inbox
-   ```
-   Track the result (email count or error) for each company.
+2. For each account, resolve its type config:
+   - Load type definition from `account-types.json` using `account.accountType` (default: `"business"`)
+   - Merge `categoryOverrides`, `downrank`, `noiseFilters`, and scalar overrides per the merge order in the spec
 
-3. Output a fetch summary using `prefs.display.fetchSummary` before the triage results:
-   - `"inline-icons"` → `✅/❌/⚠️ CompanyName (N emails) · ... — {date} · Last 24h`
+3. Fetch emails per provider — Outlook accounts sequentially (to avoid auth token conflicts), Gmail accounts via MCP:
+   - `"outlook"`: `node scripts/fetch-emails.js {account.id} 24 inbox`
+   - `"gmail"`: MCP `gmail_search_messages` for last 24 hours. If MCP is unavailable, skip and warn: "Gmail account '{account.name}' skipped — MCP unavailable"
+   Track the result (email count or error) for each account.
+
+4. Output a fetch summary using `prefs.display.fetchSummary` before the triage results:
+   - `"inline-icons"` → `✅/❌/⚠️ AccountName (N emails) · ... — {date} · Last 24h`
    - `"inline"` → same line without icons
-   - `"table"` → one row per company with account, mailbox, count, window columns
+   - `"table"` → one row per account with account, mailbox, count, window columns
    - `"none"` → skip entirely
    Use `prefs.display.statusIcons` for the icon values.
 
-4. For each company, classify emails using that company's own config fields:
-   `keyContacts`, `prioritySenders`, `urgencyRules.flags`, and `downrank`.
-   Never apply one company's rules to another company's emails.
+5. Normalize all email data to the common shape:
+   - Outlook: `from` → `from.email`, `fromName` → `from.name`
+   - Gmail MCP: extract sender name and email from response fields
 
-4. Merge all results and output three sections:
+6. For each account, classify emails using that account's resolved type config:
+   - Apply the account's resolved categories, `prioritySenders`, `urgencyRules`, `downrank`
+   - For rich categories (from `categoryOverrides`), match against category-level rules
+   - Apply noise filters if `type.noiseFilters` is not null (second pass: reject → IGNORE unless keep signal present)
+   Never apply one account's rules to another account's emails.
 
-   ## Action Items — All Accounts
-   Single prioritized list across all companies. Sort by urgency (blocking > response needed > time-sensitive).
-   For each: **[Company]** **[From]** Subject — one line on what's needed and suggested next step.
+7. **Output — Business accounts** (those with `dailyBrief.section: "main"`):
+
+   ## Action Items — All Business Accounts
+   Single prioritized list across all business accounts. Sort by urgency (blocking > response needed > time-sensitive).
+   For each: **[Account]** **[From]** Subject — one line on what's needed and suggested next step.
 
    ## News & Market Digest
-   One brief paragraph per company that had relevant industry or market emails.
-   Skip companies with nothing notable.
+   One brief paragraph per business account that had relevant industry or market emails.
+   Skip accounts with nothing notable.
 
    ## FYI
-   Short list of informational items across all accounts worth awareness but requiring no action.
-   Label each with the company name.
+   Short list of informational items across all business accounts worth awareness but requiring no action.
+   Label each with the account name.
 
-Skip the IGNORE bucket entirely. Surface the most urgent items first regardless of which company they belong to.
+8. **Output — Personal accounts** (those with `dailyBrief.section: "personal-appendix"`):
+   If any personal accounts were triaged, add a divider and:
+
+   ---
+
+   ## Personal Triage
+
+   For each visible (non-hidden) category that has emails, grouped by category in array order:
+
+   ### {category.label}
+   For each: **[From]** Subject — one line summary
+
+   ### Everything Else
+   Brief count of remaining categorized items not shown above: "N shopping/orders, N newsletters — nothing urgent"
+
+Skip the IGNORE bucket entirely in all sections. Surface the most urgent items first.
