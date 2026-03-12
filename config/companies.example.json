@@ -2,6 +2,8 @@
   "companies": [
     {
       "id": "company-a",
+      "accountType": "business",
+      "provider": "outlook",
       "name": "Company A",
       "emailDomain": "companya.com",
       "myEmail": "me@companya.com",
@@ -29,6 +31,8 @@
     },
     {
       "id": "company-b",
+      "accountType": "business",
+      "provider": "outlook",
       "name": "Company B",
       "emailDomain": "companyb.com",
       "myEmail": "me@companyb.com",
@@ -49,6 +53,39 @@
         "primary": "Executive summary of emails requiring action",
         "secondary": "News and market summary",
         "planned": ["Draft responses"]
+      }
+    }
+    ,{
+      "id": "personal",
+      "name": "Personal",
+      "accountType": "personal",
+      "provider": "gmail",
+      "myEmail": "me@gmail.com",
+      "role": "Personal",
+      "description": "Personal Gmail account",
+      "tone": "casual",
+      "purpose": "Manage personal life admin, hobbies, and volunteer commitments efficiently",
+      "keyContacts": [],
+      "prioritySenders": [],
+      "urgencyRules": { "flags": [] },
+      "downrank": [],
+      "categoryOverrides": [
+        {
+          "id": "my-hobby",
+          "label": "MY HOBBY",
+          "description": "Example: a competitive hobby with its own organizations and deadlines",
+          "prioritySenders": [
+            { "type": "domain", "value": "hobby-org.org", "label": "National organization" }
+          ],
+          "urgencyRules": {
+            "flags": ["tournament", "registration", "deadline"]
+          },
+          "downrank": ["merchandise"]
+        }
+      ],
+      "outputs": {
+        "primary": "Personal triage — items needing attention",
+        "secondary": "Life admin summary"
       }
     }
   ],
