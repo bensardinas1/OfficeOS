@@ -1,24 +1,30 @@
-Triage the Healthcare M&A inbox. $ARGUMENTS
+Triage the email inbox for a single company. $ARGUMENTS
 
-1. Run the email fetch script to get recent emails:
+$ARGUMENTS is a company ID from `config/companies.json` (e.g. `healthcarema`).
+If not provided, ask the user which company to triage.
+
+1. Load `config/companies.json`, `config/prefs.json`, and find the company entry matching $ARGUMENTS.
+   Use the company's `id`, `name`, `keyContacts`, `prioritySenders`, `urgencyRules`, and `downrank` fields to drive all classification logic below.
+
+2. Fetch recent emails:
    ```
-   node scripts/fetch-emails.js healthcarema 24 inbox
+   node scripts/fetch-emails.js {company.id} 24 inbox
    ```
+   Output a one-line fetch summary using `prefs.display.fetchSummary` and `prefs.display.statusIcons`.
 
-2. Load company context from `config/companies.json` for the `healthcarema` account.
-
-3. Classify each email using these rules:
-   - **ACTION REQUIRED** — from internal staff, key contacts (Leo Orozco, Alain Rosello, Kevin Deeb, Rick Arce), M&A lead sources (bizbuysell, mergernetwork), or any email containing a direct request
+3. Classify each email using the company's config — do not apply rules from other companies:
+   - **ACTION REQUIRED** — sender matches `company.prioritySenders` or `company.keyContacts`,
+     or email body/subject contains any term in `company.urgencyRules.flags`
    - **FYI / READ** — informational, no action needed
-   - **NEWS / MARKET** — industry news, market updates, listing notices worth summarizing
-   - **IGNORE** — bulk email, marketing, newsletters, unsubscribe
+   - **NEWS / MARKET** — industry news or market updates worth a brief summary
+   - **IGNORE** — matches any category in `company.downrank`
 
-4. Output two sections:
+4. Output:
 
-   ### Emails Requiring Action
+   ### [{company.name}] Emails Requiring Action
    For each: **[From]** Subject — one line on what's needed and suggested next step
 
-   ### News & Market Summary
-   2–3 sentence digest of any relevant industry/market emails worth knowing about
+   ### [{company.name}] News & Market Summary
+   2–3 sentence digest of relevant industry/market emails. Omit if nothing notable.
 
 Lead with the most urgent. Skip the IGNORE bucket entirely.

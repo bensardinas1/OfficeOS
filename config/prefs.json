@@ -1,0 +1,11 @@
+{
+  "display": {
+    "fetchSummary": "inline-icons",
+    "statusIcons": {
+      "success": "✅",
+      "failure": "❌",
+      "warning": "⚠️"
+    },
+    "dateFormat": "short"
+  }
+}
