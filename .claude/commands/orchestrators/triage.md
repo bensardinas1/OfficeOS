@@ -3,35 +3,24 @@ Run a full inbox triage across all configured accounts. $ARGUMENTS
 If $ARGUMENTS specifies one or more account IDs (comma-separated), triage only those.
 Otherwise, triage every account in `config/companies.json`.
 
-1. Load `config/companies.json`, `config/account-types.json`, and `config/prefs.json`.
+1. Load `config/companies.json` and `config/prefs.json`.
 
-2. For each account, resolve its type config:
-   - Load type definition from `account-types.json` using `account.accountType` (default: `"business"`)
-   - Merge `categoryOverrides`, `downrank`, `noiseFilters`, and scalar overrides per the merge order in the spec
+2. **Fetch and classify each account** — Outlook accounts sequentially (to avoid auth token conflicts), Gmail accounts via MCP:
+   - `"outlook"`: `node scripts/fetch-emails.js {account.id} 24 inbox | node scripts/classify-emails.js {account.id}`
+   - `"gmail"`: use MCP `gmail_search_messages` for the last 24 hours, then pass result as JSON to stdin: `echo '<json>' | node scripts/classify-emails.js {account.id}`
+     - If MCP is unavailable, skip and warn: "Gmail account '{account.name}' skipped — MCP unavailable"
 
-3. Fetch emails per provider — Outlook accounts sequentially (to avoid auth token conflicts), Gmail accounts via MCP:
-   - `"outlook"`: `node scripts/fetch-emails.js {account.id} 24 inbox`
-   - `"gmail"`: MCP `gmail_search_messages` for last 24 hours. If MCP is unavailable, skip and warn: "Gmail account '{account.name}' skipped — MCP unavailable"
+   The processor returns `{ accountId, accountName, accountType, categories, deletionCandidates }`.
    Track the result (email count or error) for each account.
 
-4. Output a fetch summary using `prefs.display.fetchSummary` before the triage results:
+3. Output a fetch summary using `prefs.display.fetchSummary` before the triage results:
    - `"inline-icons"` → `✅/❌/⚠️ AccountName (N emails) · ... — {date} · Last 24h`
    - `"inline"` → same line without icons
    - `"table"` → one row per account with account, mailbox, count, window columns
    - `"none"` → skip entirely
    Use `prefs.display.statusIcons` for the icon values.
 
-5. Normalize all email data to the common shape:
-   - Outlook: `from` → `from.email`, `fromName` → `from.name`
-   - Gmail MCP: extract sender name and email from response fields
-
-6. For each account, classify emails using that account's resolved type config:
-   - Apply the account's resolved categories, `prioritySenders`, `urgencyRules`, `downrank`
-   - For rich categories (from `categoryOverrides`), match against category-level rules
-   - Apply noise filters if `type.noiseFilters` is not null (second pass: reject → IGNORE unless keep signal present)
-   Never apply one account's rules to another account's emails.
-
-7. **Output — Business accounts** (those with `dailyBrief.section: "main"`):
+4. **Output — Business accounts** (those with `dailyBrief.section: "main"` in their resolved type config):
 
    ## Action Items — All Business Accounts
    Single prioritized list across all business accounts. Sort by urgency (blocking > response needed > time-sensitive).
@@ -45,14 +34,14 @@ Otherwise, triage every account in `config/companies.json`.
    Short list of informational items across all business accounts worth awareness but requiring no action.
    Label each with the account name.
 
-8. **Output — Personal accounts** (those with `dailyBrief.section: "personal-appendix"`):
+5. **Output — Personal accounts** (those with `dailyBrief.section: "personal-appendix"` in their resolved type config):
    If any personal accounts were triaged, add a divider and:
 
    ---
 
    ## Personal Triage
 
-   For each visible (non-hidden) category that has emails, grouped by category in array order:
+   For each personal account, render categories in array order from the processor result. Skip categories marked `hidden: true`. For each visible category with emails:
 
    ### {category.label}
    For each: **[From]** Subject — one line summary
@@ -60,4 +49,12 @@ Otherwise, triage every account in `config/companies.json`.
    ### Everything Else
    Brief count of remaining categorized items not shown above: "N shopping/orders, N newsletters — nothing urgent"
 
-Skip the IGNORE bucket entirely in all sections. Surface the most urgent items first.
+   Skip the IGNORE bucket entirely in all sections. Surface the most urgent items first.
+
+6. **Deletion candidates:**
+   After all category output, add a divider and list every email in `deletionCandidates` across all accounts. Number them sequentially, one line each: `N. [Account] Sender Name — Subject`. End with:
+   "Reply with numbers or ranges to delete (e.g. 'delete 1-12, 15'), or 'delete all'."
+
+   When approved, route by provider:
+   - Outlook accounts: `node scripts/delete-emails.js {account.id} {id1} {id2} ...`
+   - Gmail accounts: `node scripts/delete-gmail-emails.js {id1} {id2} ...`
