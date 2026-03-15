@@ -77,3 +77,50 @@ export function matchesUrgencyFlags(email, flags) {
   const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
   return flags.some(flag => text.includes(flag.toLowerCase()));
 }
+
+export function classifyEmail(email, account, typeConfig, categories, downrankList) {
+  // 1. Downrank check (type defaults + account-level) → IGNORE
+  if (matchesDownrank(email, downrankList)) return "ignore";
+
+  // 2. Rich category overrides — check each for its own senders, urgency flags, and downrank
+  for (const cat of categories) {
+    if (cat.hidden) continue;
+    if (cat.downrank && matchesDownrank(email, cat.downrank)) return "ignore";
+    if (cat.prioritySenders?.length && matchesSender(email, cat.prioritySenders)) return cat.id;
+    if (cat.urgencyRules?.flags?.length && matchesUrgencyFlags(email, cat.urgencyRules.flags)) return cat.id;
+  }
+
+  // 3. Account-level priority senders → action / respond
+  if (account.prioritySenders?.length && matchesSender(email, account.prioritySenders)) {
+    const actionCat = categories.find(c => c.id === "action" || c.id === "respond");
+    if (actionCat) return actionCat.id;
+  }
+
+  // 4. Account-level urgency flags → action / respond
+  if (account.urgencyRules?.flags?.length && matchesUrgencyFlags(email, account.urgencyRules.flags)) {
+    const actionCat = categories.find(c => c.id === "action" || c.id === "respond");
+    if (actionCat) return actionCat.id;
+  }
+
+  // 5. Default by account type
+  if (account.accountType === "personal") {
+    return classifyPersonalEmail(email, categories);
+  }
+  return "fyi";
+}
+
+function classifyPersonalEmail(email, categories) {
+  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
+
+  if (/statement|bill|invoice|payment.due|balance.due|autopay|account.alert|due.date/.test(text)) return "bills";
+  if (/appointment|your.visit|check.?up|scheduled|reminder|seeing.you/.test(text)) return "appointments";
+  if (/booking|itinerary|flight|hotel|reservation|check.?in|boarding|gate.change/.test(text)) return "travel";
+  if (/order|shipped|delivered|tracking|return|refund|receipt/.test(text)) return "shopping";
+  if (/subscription|renewal|renew|expires|membership|plan.change/.test(text)) return "subscriptions";
+  if (/gym|workout|fitness|class|wellness/.test(text)) return "fitness";
+  if (/invited|invitation|rsvp|party|gathering/.test(text)) return "social";
+
+  // Default personal fallback
+  const newsletterCat = categories.find(c => c.id === "newsletters");
+  return newsletterCat ? "newsletters" : (categories.find(c => !c.hidden)?.id ?? "ignore");
+}

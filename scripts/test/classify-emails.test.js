@@ -6,6 +6,7 @@ import {
   matchesSender,
   matchesDownrank,
   matchesUrgencyFlags,
+  classifyEmail,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -96,5 +97,40 @@ describe("matchesUrgencyFlags", () => {
 
   it("returns false when no flags match", () => {
     assert.ok(!matchesUrgencyFlags(emails.fyi, ["terminated", "hold"]));
+  });
+});
+
+describe("classifyEmail — business account", () => {
+  const categories = resolveCategories(businessTypeConfig, businessAccount);
+  const downrankList = resolveDownrank(businessTypeConfig, businessAccount);
+
+  it("classifies internal domain sender as action", () => {
+    const cat = classifyEmail(emails.fromInternalDomain, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "action");
+  });
+
+  it("classifies priority sender by name as action", () => {
+    const cat = classifyEmail(emails.fromPrioritySenderByName, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "action");
+  });
+
+  it("classifies urgency flag email as action", () => {
+    const cat = classifyEmail(emails.withUrgencyFlag, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "action");
+  });
+
+  it("classifies newsletter as ignore", () => {
+    const cat = classifyEmail(emails.newsletter, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("classifies account-level downranked email as ignore", () => {
+    const cat = classifyEmail(emails.downrankedByAccount, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("classifies neutral email as fyi", () => {
+    const cat = classifyEmail(emails.fyi, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "fyi");
   });
 });
