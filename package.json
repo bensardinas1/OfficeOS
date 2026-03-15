@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "fetch-emails": "node scripts/fetch-emails.js",
-    "test-auth": "node scripts/test-auth.js"
+    "test-auth": "node scripts/test-auth.js",
+    "test": "node --test scripts/test/**/*.test.js"
   },
   "dependencies": {
     "@azure/msal-node": "^2.16.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "googleapis": "^171.4.0"
   }
 }
