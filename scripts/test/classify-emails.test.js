@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import {
   resolveCategories,
   resolveDownrank,
+  matchesSender,
+  matchesDownrank,
+  matchesUrgencyFlags,
 } from "../classify-emails.js";
+import { emails } from "./fixtures/emails.js";
 import {
   businessTypeConfig,
   personalTypeConfig,
@@ -48,5 +52,49 @@ describe("resolveDownrank", () => {
     const account = { ...businessAccount, downrank: [] };
     const list = resolveDownrank(businessTypeConfig, account);
     assert.deepEqual(list, businessTypeConfig.downrankDefaults);
+  });
+});
+
+describe("matchesSender", () => {
+  it("matches by domain", () => {
+    const senders = [{ type: "domain", value: "testbiz.com" }];
+    assert.ok(matchesSender(emails.fromInternalDomain, senders));
+  });
+
+  it("matches by name (case-insensitive)", () => {
+    const senders = [{ type: "name", value: "jane partner" }];
+    assert.ok(matchesSender(emails.fromPrioritySenderByName, senders));
+  });
+
+  it("matches by keyword in subject or preview", () => {
+    const senders = [{ type: "keyword", value: "terminated" }];
+    assert.ok(matchesSender(emails.withUrgencyFlag, senders));
+  });
+
+  it("returns false when no match", () => {
+    const senders = [{ type: "domain", value: "nowhere.com" }];
+    assert.ok(!matchesSender(emails.fyi, senders));
+  });
+});
+
+describe("matchesDownrank", () => {
+  it("matches newsletter email against downrank list", () => {
+    const list = ["newsletters", "marketing"];
+    assert.ok(matchesDownrank(emails.newsletter, list));
+  });
+
+  it("returns false when no match", () => {
+    const list = ["newsletters", "marketing"];
+    assert.ok(!matchesDownrank(emails.fromInternalDomain, list));
+  });
+});
+
+describe("matchesUrgencyFlags", () => {
+  it("detects urgency flag in subject", () => {
+    assert.ok(matchesUrgencyFlags(emails.withUrgencyFlag, ["terminated", "hold"]));
+  });
+
+  it("returns false when no flags match", () => {
+    assert.ok(!matchesUrgencyFlags(emails.fyi, ["terminated", "hold"]));
   });
 });

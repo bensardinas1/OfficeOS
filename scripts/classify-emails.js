@@ -47,3 +47,33 @@ export function resolveDownrank(typeConfig, account) {
     ...(account.downrank || []),
   ];
 }
+
+export function matchesSender(email, senders) {
+  const fromEmail = (email.from || "").toLowerCase();
+  const fromName = (email.fromName || "").toLowerCase();
+  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
+
+  for (const sender of senders) {
+    if (sender.type === "domain") {
+      const domain = fromEmail.split("@")[1];
+      if (domain === sender.value.toLowerCase()) return true;
+    } else if (sender.type === "name") {
+      if (fromName.includes(sender.value.toLowerCase())) return true;
+    } else if (sender.type === "email") {
+      if (fromEmail === sender.value.toLowerCase()) return true;
+    } else if (sender.type === "keyword") {
+      if (text.includes(sender.value.toLowerCase())) return true;
+    }
+  }
+  return false;
+}
+
+export function matchesDownrank(email, downrankList) {
+  const text = `${email.subject || ""} ${email.fromName || ""} ${email.from || ""} ${email.preview || ""}`.toLowerCase();
+  return downrankList.some(term => text.includes(term.toLowerCase()));
+}
+
+export function matchesUrgencyFlags(email, flags) {
+  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
+  return flags.some(flag => text.includes(flag.toLowerCase()));
+}

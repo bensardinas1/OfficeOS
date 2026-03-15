@@ -13,7 +13,7 @@ export const emails = {
     fromName: "Bank", preview: "Account has been terminated effective immediately", received: "2026-03-14T10:02:00Z"
   },
   newsletter: {
-    id: "e4", subject: "Weekly IT Newsletter", from: "news@substack.com",
+    id: "e4", subject: "Weekly IT Newsletters", from: "news@substack.com",
     fromName: "IT News", preview: "Top articles this week", received: "2026-03-14T10:03:00Z"
   },
   marketing: {
