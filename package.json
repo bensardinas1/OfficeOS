@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "fetch-emails": "node scripts/fetch-emails.js",
-    "test-auth": "node scripts/test-auth.js"
+    "test-auth": "node scripts/test-auth.js",
+    "test": "node --test scripts/test/**/*.test.js"
   },
   "dependencies": {
     "@azure/msal-node": "^2.16.0",
