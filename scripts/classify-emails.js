@@ -18,19 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function resolveConfigRoot() {
-  // Standard: scripts/ → ../config (main project)
-  const standard = join(__dirname, "../config");
-  if (existsSync(join(standard, "companies.json"))) return standard;
-  // Worktree fallback: .worktrees/<name>/scripts/ → ../../../config (main project root)
-  const worktreeFallback = join(__dirname, "../../../config");
-  if (existsSync(join(worktreeFallback, "companies.json"))) return worktreeFallback;
-  // Last resort: use standard path and let readFileSync throw a descriptive error
-  return standard;
-}
-
 function loadConfig() {
-  const configRoot = resolveConfigRoot();
+  const configRoot = join(__dirname, "../config");
   const companies = JSON.parse(
     readFileSync(join(configRoot, "companies.json"), "utf-8")
   );
@@ -125,8 +114,8 @@ export function classifyEmail(email, account, typeConfig, categories, downrankLi
 export function applyNoiseFilter(email, noiseFilters) {
   if (!noiseFilters) return false;
   const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
-  const matchesReject = noiseFilters.signals_reject.some(s => text.includes(s));
-  const matchesKeep = noiseFilters.signals_keep.some(s => text.includes(s));
+  const matchesReject = (noiseFilters.signals_reject || []).some(s => text.includes(s));
+  const matchesKeep = (noiseFilters.signals_keep || []).some(s => text.includes(s));
   if (matchesReject && !matchesKeep) return true;
   return false;
 }
@@ -176,13 +165,10 @@ function classifyPersonalEmail(email, categories) {
 
   if (/statement|bill|invoice|payment.due|balance.due|autopay|account.alert|due.date/.test(text)) return "bills";
   if (/appointment|your.visit|check.?up|scheduled|reminder|seeing.you/.test(text)) return "appointments";
-  if (/booking|itinerary|flight|hotel|reservation|check.?in|boarding|gate.change/.test(text)) return "travel";
   if (/order|shipped|delivered|tracking|return|refund|receipt/.test(text)) return "shopping";
   if (/subscription|renewal|renew|expires|membership|plan.change/.test(text)) return "subscriptions";
-  if (/gym|workout|fitness|class|wellness/.test(text)) return "fitness";
-  if (/invited|invitation|rsvp|party|gathering/.test(text)) return "social";
 
-  // Default personal fallback
+  // Default personal fallback — newsletters if available, otherwise first non-hidden category
   const newsletterCat = categories.find(c => c.id === "newsletters");
   return newsletterCat ? "newsletters" : (categories.find(c => !c.hidden)?.id ?? "ignore");
 }

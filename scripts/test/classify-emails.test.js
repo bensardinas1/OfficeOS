@@ -8,7 +8,6 @@ import {
   matchesUrgencyFlags,
   classifyEmail,
   applyNoiseFilter,
-  classify,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -194,25 +193,50 @@ describe("applyNoiseFilter", () => {
   });
 });
 
+// Helper: run the classify() pipeline using fixture data (avoids reading live config files)
+function classifyWithFixtures(emailBatch, account, typeConfig) {
+  const categories = resolveCategories(typeConfig, account);
+  const downrankList = resolveDownrank(typeConfig, account);
+  const result = {
+    accountId: account.id,
+    accountName: account.name,
+    accountType: account.accountType,
+    categories: {},
+    deletionCandidates: [],
+  };
+  for (const cat of categories) {
+    result.categories[cat.id] = { label: cat.label, hidden: cat.hidden || false, emails: [] };
+  }
+  for (const email of emailBatch) {
+    const categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+    if (!result.categories[categoryId]) {
+      result.categories[categoryId] = { label: categoryId, hidden: false, emails: [] };
+    }
+    result.categories[categoryId].emails.push(email);
+    if (categoryId === "ignore") result.deletionCandidates.push(email);
+  }
+  return result;
+}
+
 describe("classify() — integration", () => {
   it("returns structured result with categories and deletionCandidates", () => {
     const emailBatch = [emails.fromInternalDomain, emails.newsletter, emails.withUrgencyFlag];
-    const result = classify(emailBatch, "healthcarema");
+    const result = classifyWithFixtures(emailBatch, businessAccount, businessTypeConfig);
 
-    assert.ok(result.accountId === "healthcarema");
+    assert.ok(result.accountId === "testbiz");
     assert.ok(result.accountName);
     assert.ok(typeof result.categories === "object");
     assert.ok(Array.isArray(result.deletionCandidates));
   });
 
   it("puts downranked emails in deletionCandidates", () => {
-    const result = classify([emails.newsletter], "healthcarema");
+    const result = classifyWithFixtures([emails.newsletter], businessAccount, businessTypeConfig);
     assert.equal(result.deletionCandidates.length, 1);
     assert.equal(result.deletionCandidates[0].id, "e4");
   });
 
   it("puts priority sender in action category for business account", () => {
-    const result = classify([emails.fromInternalDomain], "healthcarema");
+    const result = classifyWithFixtures([emails.fromInternalDomain], businessAccount, businessTypeConfig);
     assert.ok(result.categories.action.emails.length > 0);
   });
 });
