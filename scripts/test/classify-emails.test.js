@@ -7,6 +7,7 @@ import {
   matchesDownrank,
   matchesUrgencyFlags,
   classifyEmail,
+  applyNoiseFilter,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -132,5 +133,62 @@ describe("classifyEmail — business account", () => {
   it("classifies neutral email as fyi", () => {
     const cat = classifyEmail(emails.fyi, businessAccount, businessTypeConfig, categories, downrankList);
     assert.equal(cat, "fyi");
+  });
+});
+
+describe("classifyEmail — personal account", () => {
+  const categories = resolveCategories(personalTypeConfig, personalAccount);
+  const downrankList = resolveDownrank(personalTypeConfig, personalAccount);
+
+  it("classifies Chase statement as bills", () => {
+    const cat = classifyEmail(emails.chaseStatement, personalAccount, personalTypeConfig, categories, downrankList);
+    assert.equal(cat, "bills");
+  });
+
+  it("classifies AUSKF federation email as iaido", () => {
+    const cat = classifyEmail(emails.iaidoFromFederation, personalAccount, personalTypeConfig, categories, downrankList);
+    assert.equal(cat, "iaido");
+  });
+
+  it("classifies AUSKF merchandise as ignore (category-level downrank)", () => {
+    const cat = classifyEmail(emails.iaidoMerchandise, personalAccount, personalTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("classifies deal email as ignore via type downrank", () => {
+    const cat = classifyEmail(emails.uberEatsDeal, personalAccount, personalTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("classifies shipping confirmation as shopping", () => {
+    const cat = classifyEmail(emails.shippingConfirmation, personalAccount, personalTypeConfig, categories, downrankList);
+    assert.equal(cat, "shopping");
+  });
+});
+
+describe("applyNoiseFilter", () => {
+  const { noiseFilters } = personalTypeConfig;
+
+  it("returns true (should ignore) when email matches reject and not keep", () => {
+    // retail promo: matches 'recommended', 'you might like' — no keep signals
+    assert.ok(applyNoiseFilter(emails.retailPromo, noiseFilters));
+  });
+
+  it("returns false (keep) when email matches keep signal", () => {
+    // shipping confirmation: matches 'shipped', 'delivered' — keep wins
+    assert.ok(!applyNoiseFilter(emails.shippingConfirmation, noiseFilters));
+  });
+
+  it("returns false (keep) when email matches both keep and reject", () => {
+    const email = {
+      subject: "Your order shipped — plus recommended items",
+      preview: "confirmation: shipped. Also: items you might like",
+      from: "store@example.com", fromName: "Store"
+    };
+    assert.ok(!applyNoiseFilter(email, noiseFilters));
+  });
+
+  it("returns false when noiseFilters is null", () => {
+    assert.ok(!applyNoiseFilter(emails.newsletter, null));
   });
 });

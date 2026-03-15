@@ -104,9 +104,19 @@ export function classifyEmail(email, account, typeConfig, categories, downrankLi
 
   // 5. Default by account type
   if (account.accountType === "personal") {
+    if (typeConfig.noiseFilters && applyNoiseFilter(email, typeConfig.noiseFilters)) return "ignore";
     return classifyPersonalEmail(email, categories);
   }
   return "fyi";
+}
+
+export function applyNoiseFilter(email, noiseFilters) {
+  if (!noiseFilters) return false;
+  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
+  const matchesReject = noiseFilters.signals_reject.some(s => text.includes(s));
+  const matchesKeep = noiseFilters.signals_keep.some(s => text.includes(s));
+  if (matchesReject && !matchesKeep) return true;
+  return false;
 }
 
 function classifyPersonalEmail(email, categories) {
