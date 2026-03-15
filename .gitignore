@@ -33,3 +33,6 @@ logs/
 # Temp files
 *.tmp
 *.bak
+
+# Git worktrees
+.worktrees/
