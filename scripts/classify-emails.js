@@ -186,3 +186,26 @@ function classifyPersonalEmail(email, categories) {
   const newsletterCat = categories.find(c => c.id === "newsletters");
   return newsletterCat ? "newsletters" : (categories.find(c => !c.hidden)?.id ?? "ignore");
 }
+
+// CLI entrypoint — only runs when executed directly, not when imported
+if (process.argv[1] && process.argv[1].endsWith("classify-emails.js")) {
+  const accountId = process.argv[2];
+  if (!accountId) {
+    console.error("Usage: node scripts/fetch-emails.js <accountId> 24 inbox | node scripts/classify-emails.js <accountId>");
+    process.exit(1);
+  }
+
+  let raw = "";
+  process.stdin.setEncoding("utf-8");
+  process.stdin.on("data", chunk => { raw += chunk; });
+  process.stdin.on("end", () => {
+    try {
+      const emailList = JSON.parse(raw);
+      const result = classify(emailList, accountId);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error("Error:", err.message);
+      process.exit(1);
+    }
+  });
+}
