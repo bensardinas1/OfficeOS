@@ -8,6 +8,7 @@ import {
   matchesUrgencyFlags,
   classifyEmail,
   applyNoiseFilter,
+  classify,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -190,5 +191,28 @@ describe("applyNoiseFilter", () => {
 
   it("returns false when noiseFilters is null", () => {
     assert.ok(!applyNoiseFilter(emails.newsletter, null));
+  });
+});
+
+describe("classify() — integration", () => {
+  it("returns structured result with categories and deletionCandidates", () => {
+    const emailBatch = [emails.fromInternalDomain, emails.newsletter, emails.withUrgencyFlag];
+    const result = classify(emailBatch, "healthcarema");
+
+    assert.ok(result.accountId === "healthcarema");
+    assert.ok(result.accountName);
+    assert.ok(typeof result.categories === "object");
+    assert.ok(Array.isArray(result.deletionCandidates));
+  });
+
+  it("puts downranked emails in deletionCandidates", () => {
+    const result = classify([emails.newsletter], "healthcarema");
+    assert.equal(result.deletionCandidates.length, 1);
+    assert.equal(result.deletionCandidates[0].id, "e4");
+  });
+
+  it("puts priority sender in action category for business account", () => {
+    const result = classify([emails.fromInternalDomain], "healthcarema");
+    assert.ok(result.categories.action.emails.length > 0);
   });
 });

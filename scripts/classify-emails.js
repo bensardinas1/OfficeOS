@@ -12,18 +12,30 @@
  *   resolveDownrank(typeConfig, account) → string[]
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function resolveConfigRoot() {
+  // Standard: scripts/ → ../config (main project)
+  const standard = join(__dirname, "../config");
+  if (existsSync(join(standard, "companies.json"))) return standard;
+  // Worktree fallback: .worktrees/<name>/scripts/ → ../../../config (main project root)
+  const worktreeFallback = join(__dirname, "../../../config");
+  if (existsSync(join(worktreeFallback, "companies.json"))) return worktreeFallback;
+  // Last resort: use standard path and let readFileSync throw a descriptive error
+  return standard;
+}
+
 function loadConfig() {
+  const configRoot = resolveConfigRoot();
   const companies = JSON.parse(
-    readFileSync(join(__dirname, "../config/companies.json"), "utf-8")
+    readFileSync(join(configRoot, "companies.json"), "utf-8")
   );
   const accountTypes = JSON.parse(
-    readFileSync(join(__dirname, "../config/account-types.json"), "utf-8")
+    readFileSync(join(configRoot, "account-types.json"), "utf-8")
   );
   return { companies, accountTypes };
 }
@@ -117,6 +129,46 @@ export function applyNoiseFilter(email, noiseFilters) {
   const matchesKeep = noiseFilters.signals_keep.some(s => text.includes(s));
   if (matchesReject && !matchesKeep) return true;
   return false;
+}
+
+export function classify(emails, accountId) {
+  const { companies, accountTypes } = loadConfig();
+  const account = companies.companies.find(c => c.id === accountId);
+  if (!account) throw new Error(`Account not found: ${accountId}`);
+
+  const typeKey = account.accountType || "business";
+  const typeConfig = accountTypes[typeKey];
+  if (!typeConfig) throw new Error(`Account type not found: ${typeKey}`);
+
+  const categories = resolveCategories(typeConfig, account);
+  const downrankList = resolveDownrank(typeConfig, account);
+
+  const result = {
+    accountId,
+    accountName: account.name,
+    accountType: typeKey,
+    categories: {},
+    deletionCandidates: [],
+  };
+
+  for (const cat of categories) {
+    result.categories[cat.id] = { label: cat.label, hidden: cat.hidden || false, emails: [] };
+  }
+
+  for (const email of emails) {
+    let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+
+    if (!result.categories[categoryId]) {
+      result.categories[categoryId] = { label: categoryId, hidden: false, emails: [] };
+    }
+    result.categories[categoryId].emails.push(email);
+
+    if (categoryId === "ignore") {
+      result.deletionCandidates.push(email);
+    }
+  }
+
+  return result;
 }
 
 function classifyPersonalEmail(email, categories) {
