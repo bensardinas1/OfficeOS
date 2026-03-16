@@ -62,6 +62,23 @@ export function transformSentEmails(messages) {
     .filter((e) => isOriginalEmail(e));
 }
 
+function splitAddresses(header) {
+  const addresses = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of header) {
+    if (ch === '"') { inQuotes = !inQuotes; current += ch; }
+    else if (ch === "," && !inQuotes) {
+      const addr = current.trim().replace(/.*<([^>]+)>/, "$1");
+      if (addr) addresses.push(addr);
+      current = "";
+    } else { current += ch; }
+  }
+  const last = current.trim().replace(/.*<([^>]+)>/, "$1");
+  if (last) addresses.push(last);
+  return addresses;
+}
+
 async function fetchOutlook(accountId, count) {
   const client = await buildGraphClient(accountId);
   const response = await client
@@ -119,11 +136,11 @@ async function fetchGmail(count) {
     }
 
     messages.push({
-      toRecipients: getHeader("To").split(",").map((addr) => ({
-        emailAddress: { address: addr.trim().replace(/.*<([^>]+)>/, "$1") },
+      toRecipients: splitAddresses(getHeader("To")).map((addr) => ({
+        emailAddress: { address: addr },
       })),
-      ccRecipients: getHeader("Cc") ? getHeader("Cc").split(",").map((addr) => ({
-        emailAddress: { address: addr.trim().replace(/.*<([^>]+)>/, "$1") },
+      ccRecipients: getHeader("Cc") ? splitAddresses(getHeader("Cc")).map((addr) => ({
+        emailAddress: { address: addr },
       })) : [],
       subject: getHeader("Subject"),
       sentDateTime: getHeader("Date"),
