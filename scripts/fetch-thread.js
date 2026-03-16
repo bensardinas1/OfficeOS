@@ -22,6 +22,9 @@ function stripHtml(html) {
 }
 
 export function transformGraphMessages(messages) {
+  if (!messages || messages.length === 0) {
+    return { threadId: null, subject: null, messages: [] };
+  }
   const sorted = [...messages].sort(
     (a, b) => new Date(a.receivedDateTime) - new Date(b.receivedDateTime)
   );
@@ -48,16 +51,21 @@ if (process.argv[1] && process.argv[1].endsWith("fetch-thread.js")) {
     console.error("Usage: node scripts/fetch-thread.js <accountId> <messageId>");
     process.exit(1);
   }
-  const client = await buildGraphClient(accountId);
-  const msg = await client.api(`/me/messages/${messageId}`).select("conversationId").get();
-  const conversationId = msg.conversationId;
-  const response = await client
-    .api("/me/messages")
-    .filter(`conversationId eq '${conversationId}'`)
-    .select("id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,body")
-    .orderby("receivedDateTime asc")
-    .top(50)
-    .get();
-  const result = transformGraphMessages(response.value);
-  console.log(JSON.stringify(result, null, 2));
+  try {
+    const client = await buildGraphClient(accountId);
+    const msg = await client.api(`/me/messages/${messageId}`).select("conversationId").get();
+    const conversationId = msg.conversationId;
+    const response = await client
+      .api("/me/messages")
+      .filter(`conversationId eq '${conversationId}'`)
+      .select("id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,body")
+      .orderby("receivedDateTime asc")
+      .top(50)
+      .get();
+    const result = transformGraphMessages(response.value);
+    console.log(JSON.stringify(result, null, 2));
+  } catch (err) {
+    console.error("Error:", err.message);
+    process.exit(1);
+  }
 }

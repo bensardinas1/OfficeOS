@@ -61,4 +61,10 @@ describe("transformGraphMessages", () => {
     const result = transformGraphMessages(reversed);
     assert.equal(result.messages[0].messageId, "msg-001");
   });
+
+  it("returns empty result for empty messages array", () => {
+    const result = transformGraphMessages([]);
+    assert.equal(result.threadId, null);
+    assert.deepEqual(result.messages, []);
+  });
 });
