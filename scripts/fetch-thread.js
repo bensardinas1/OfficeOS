@@ -34,8 +34,8 @@ export function transformGraphMessages(messages) {
     subject: first.subject,
     messages: sorted.map((m) => ({
       messageId: m.id,
-      from: m.from.emailAddress.address,
-      fromName: m.from.emailAddress.name,
+      from: m.from?.emailAddress?.address ?? "",
+      fromName: m.from?.emailAddress?.name ?? "",
       to: (m.toRecipients || []).map((r) => r.emailAddress.address),
       cc: (m.ccRecipients || []).map((r) => r.emailAddress.address),
       received: m.receivedDateTime,
@@ -57,7 +57,7 @@ if (process.argv[1] && process.argv[1].endsWith("fetch-thread.js")) {
     const conversationId = msg.conversationId;
     const response = await client
       .api("/me/messages")
-      .filter(`conversationId eq '${conversationId}'`)
+      .filter(`conversationId eq '${conversationId.replace(/'/g, "''")}'`)
       .select("id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,body")
       .orderby("receivedDateTime asc")
       .top(50)
