@@ -143,7 +143,7 @@ async function fetchGmail(count) {
         emailAddress: { address: addr },
       })) : [],
       subject: getHeader("Subject"),
-      sentDateTime: getHeader("Date"),
+      sentDateTime: new Date(getHeader("Date")).toISOString(),
       body: { content: bodyContent, contentType: bodyType },
     });
   }

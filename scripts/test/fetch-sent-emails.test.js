@@ -28,6 +28,10 @@ describe("isOriginalEmail", () => {
     assert.equal(isOriginalEmail({ subject: "Declined: Lunch meeting", body: "" }), false);
   });
 
+  it("rejects tentatively accepted calendar responses", () => {
+    assert.equal(isOriginalEmail({ subject: "Tentatively Accepted: Weekly sync", body: "" }), false);
+  });
+
   it("rejects automatic reply markers", () => {
     assert.equal(isOriginalEmail({ subject: "Re: Question", body: "This is an automatic reply." }), false);
   });

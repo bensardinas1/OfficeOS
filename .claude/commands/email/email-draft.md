@@ -10,7 +10,7 @@ $ARGUMENTS may include:
 
 Determine **reply** vs **compose** from $ARGUMENTS.
 
-Extract account ID. If missing or ambiguous, ask: *"Which account? (healthcarema / brickellpay / summitmiami / personal)"*
+Extract account ID. If missing or ambiguous, load all account IDs from `config/companies.json` and ask: *"Which account? ({list of account IDs})"*
 
 ---
 
