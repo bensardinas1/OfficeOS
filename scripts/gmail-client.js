@@ -78,7 +78,7 @@ export async function buildGmailClient() {
   } else {
     const authUrl = oauth2.generateAuthUrl({
       access_type: "offline",
-      scope: ["https://www.googleapis.com/auth/gmail.modify"],
+      scope: ["https://mail.google.com/"],
     });
     console.error("\nOpen this URL to authorize Gmail access:\n");
     console.error(authUrl);
