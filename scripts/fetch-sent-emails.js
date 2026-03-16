@@ -40,7 +40,7 @@ export function isOriginalEmail({ subject, body }) {
   if (subj.startsWith("fw:") || subj.startsWith("fwd:")) return false;
 
   // Filter calendar responses
-  if (/^(accepted|declined|tentative):/.test(subj)) return false;
+  if (/^(accepted|declined|tentative|tentatively accepted):/.test(subj)) return false;
 
   // Filter auto-replies
   if (text.includes("out of office") || text.includes("automatic reply")) return false;
@@ -92,21 +92,29 @@ async function fetchGmail(count) {
     const headers = msg.data.payload?.headers || [];
     const getHeader = (name) => headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
 
-    // Extract body from payload
+    // Extract body from payload (walks nested multipart MIME trees)
+    function findPart(payload, mimeType) {
+      if (payload.mimeType === mimeType && payload.body?.data) return payload;
+      for (const part of (payload.parts || [])) {
+        const found = findPart(part, mimeType);
+        if (found) return found;
+      }
+      return null;
+    }
+    function decodeBase64Url(data) {
+      return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    }
     let bodyContent = "";
     let bodyType = "text";
-    const parts = msg.data.payload?.parts || [];
-    if (parts.length > 0) {
-      const textPart = parts.find((p) => p.mimeType === "text/plain");
-      const htmlPart = parts.find((p) => p.mimeType === "text/html");
-      if (textPart?.body?.data) {
-        bodyContent = Buffer.from(textPart.body.data, "base64").toString("utf-8");
-      } else if (htmlPart?.body?.data) {
-        bodyContent = Buffer.from(htmlPart.body.data, "base64").toString("utf-8");
-        bodyType = "html";
-      }
+    const textPart = findPart(msg.data.payload, "text/plain");
+    const htmlPart = findPart(msg.data.payload, "text/html");
+    if (textPart?.body?.data) {
+      bodyContent = decodeBase64Url(textPart.body.data);
+    } else if (htmlPart?.body?.data) {
+      bodyContent = decodeBase64Url(htmlPart.body.data);
+      bodyType = "html";
     } else if (msg.data.payload?.body?.data) {
-      bodyContent = Buffer.from(msg.data.payload.body.data, "base64").toString("utf-8");
+      bodyContent = decodeBase64Url(msg.data.payload.body.data);
       if (msg.data.payload?.mimeType === "text/html") bodyType = "html";
     }
 

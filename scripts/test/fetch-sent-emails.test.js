@@ -72,4 +72,17 @@ describe("transformSentEmails", () => {
     assert.deepEqual(transformSentEmails([]), []);
     assert.deepEqual(transformSentEmails(null), []);
   });
+
+  it("handles messages with undefined body", () => {
+    const result = transformSentEmails([{
+      id: "sent-003",
+      subject: "Quick note",
+      toRecipients: [{ emailAddress: { address: "alice@acme.com" } }],
+      ccRecipients: [],
+      sentDateTime: "2026-03-16T14:00:00Z",
+      body: undefined,
+    }]);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].body, "");
+  });
 });
