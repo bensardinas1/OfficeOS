@@ -10,10 +10,14 @@
  */
 import { buildGraphClient } from "./graph-client.js";
 
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function buildOutlookMessageBody({ to, cc, subject, body }) {
   const htmlBody = body
     .split(/\n\n+/)
-    .map((para) => `<p>${para.replace(/\n/g, "<br>")}</p>`)
+    .map((para) => `<p>${escapeHtml(para).replace(/\n/g, "<br>")}</p>`)
     .join("\n");
   return {
     subject,
@@ -63,7 +67,8 @@ if (process.argv[1] && process.argv[1].endsWith("save-draft.js")) {
           toRecipients: patch.toRecipients,
           ccRecipients: patch.ccRecipients,
         });
-        await client.api(`/me/messages/${draftId}/move`).post({ destinationId: folderId });
+        const moved = await client.api(`/me/messages/${draftId}/move`).post({ destinationId: folderId });
+        draftId = moved.id;
       } else {
         // Compose: create directly in Drafts-OfficeOS
         const msg = await client

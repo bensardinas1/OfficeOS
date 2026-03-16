@@ -48,6 +48,19 @@ describe("buildOutlookMessageBody", () => {
     assert.deepEqual(payload.ccRecipients, []);
   });
 
+  it("escapes HTML entities in body", () => {
+    const payload = buildOutlookMessageBody({
+      to: ["alice@acme.com"],
+      cc: [],
+      subject: "Test",
+      body: "AT&T revenue < projections > expected",
+    });
+    assert.ok(payload.body.content.includes("AT&amp;T"));
+    assert.ok(payload.body.content.includes("&lt; projections"));
+    assert.ok(payload.body.content.includes("&gt; expected"));
+    assert.ok(!payload.body.content.includes("< projections"));
+  });
+
   it("marks message as draft", () => {
     const payload = buildOutlookMessageBody({
       to: ["alice@acme.com"],
