@@ -1,6 +1,6 @@
 # Per-User Voice Profile — Design Spec
 **Date:** 2026-03-16
-**Status:** Draft
+**Status:** Review Complete
 
 ## Overview
 
