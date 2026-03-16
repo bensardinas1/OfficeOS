@@ -31,7 +31,7 @@ If `voiceProfile` is missing for the account, stop and tell the user: *"No voice
   Run: `node scripts/fetch-thread.js {account.id} {messageId}`
   This returns `{ threadId, subject, messages: [...] }`. Use the full thread for context. Note the most recent `messageId` for `replyToMessageId`.
 - If a `messageId` was provided and `provider === "gmail"`:
-  First, use MCP `gmail_read_message` with the `messageId` to retrieve the message and extract its `threadId` field. Then call MCP `gmail_read_thread` with that `threadId` to get the full thread context. The `threadId` is what gets passed to `save-gmail-draft.js`.
+  First, use MCP `gmail_read_message` with the `messageId` to retrieve the message and extract its `threadId` field. Then call MCP `gmail_read_thread` with that `threadId` to get the full thread context. Extract the sender address (for `to`), CC list, and subject (prefixed with "Re: " if not already) from the thread — these are needed for the save payload since Gmail drafts are built from scratch. The `threadId` is what gets passed to `save-gmail-draft.js`.
 - If thread content was pasted inline: use as-is.
 - If fetch fails: ask the user to paste the relevant email content.
 
@@ -46,7 +46,7 @@ If `voiceProfile` is missing for the account, stop and tell the user: *"No voice
 Apply in this priority order (later wins):
 
 1. **Account defaults** — `voiceProfile.formality`, `voiceProfile.openingStyle`, `voiceProfile.signOff`
-2. **Urgency override** — if this is a reply and the email's triage category matches a key in `voiceProfile.urgencyToneOverrides`, apply that tone guidance. If no key matches, stay at account defaults.
+2. **Urgency override** — if this is a reply and the email's triage category (or category override ID) matches a key in `voiceProfile.urgencyToneOverrides`, apply that tone guidance. If no key matches, stay at account defaults.
 3. **Contact override** — if any recipient's email matches an entry in `voiceProfile.contactOverrides`, apply only the fields present in that entry (e.g. if only `formality` is set, `openingStyle` stays from step 2).
 
 **`openingStyle` behavior:**
@@ -95,7 +95,7 @@ echo '<payload-json>' | node scripts/save-draft.js {account.id}
 
 **Gmail accounts:**
 Payload: `{ "to": [...], "cc": [...], "subject": "...", "body": "...", "threadId": "..." }`
-(omit `threadId` for compose; `threadId` is the `id` from `gmail_read_thread` response)
+(omit `threadId` for compose; use the same `threadId` obtained in step 3)
 
 ```bash
 echo '<payload-json>' | node scripts/save-gmail-draft.js {account.id}
