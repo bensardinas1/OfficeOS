@@ -74,6 +74,11 @@ export function matchesDownrank(email, downrankList) {
   return downrankList.some(term => text.includes(term.toLowerCase()));
 }
 
+export function matchesDeletionPattern(email, patterns) {
+  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
+  return patterns.some(pattern => text.includes(pattern.toLowerCase()));
+}
+
 export function matchesUrgencyFlags(email, flags) {
   const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
   return flags.some(flag => text.includes(flag.toLowerCase()));
@@ -152,7 +157,9 @@ export function classify(emails, accountId) {
     }
     result.categories[categoryId].emails.push(email);
 
-    if (categoryId === "ignore") {
+    const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
+    const deletionCategoryIds = new Set(policy.categories);
+    if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns)) {
       result.deletionCandidates.push(email);
     }
   }
