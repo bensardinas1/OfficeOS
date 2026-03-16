@@ -22,6 +22,13 @@ Load `config/companies.json`. Find the account entry. Read:
 
 If `voiceProfile` is missing for the account, stop and tell the user: *"No voiceProfile found for account '{accountId}'. Add a voiceProfile block to config/companies.json before drafting."*
 
+Also check for `config/voice-profile-{accountId}.json`. If it exists, load:
+- `styleNotes` — prose description of the user's writing patterns
+- `sampleEmails` — curated examples of the user's actual sent emails
+- `corrections` — learned revisions from prior drafts
+
+The voice profile is optional — if the file does not exist, proceed with the structured `voiceProfile` only.
+
 ---
 
 ## 3. Get thread context
@@ -48,6 +55,10 @@ Apply in this priority order (later wins):
 1. **Account defaults** — `voiceProfile.formality`, `voiceProfile.openingStyle`, `voiceProfile.signOff`
 2. **Urgency override** — if this is a reply and the email's triage category (or category override ID) matches a key in `voiceProfile.urgencyToneOverrides`, apply that tone guidance. If no key matches, stay at account defaults.
 3. **Contact override** — if any recipient's email matches an entry in `voiceProfile.contactOverrides`, apply only the fields present in that entry (e.g. if only `formality` is set, `openingStyle` stays from step 2).
+4. **Personal voice** — if a voice profile was loaded:
+   - Apply `styleNotes` as additional guidance for word choice, sentence structure, and tone
+   - Select 2–3 `sampleEmails` whose `context` tag best matches the current draft context (e.g., prefer external examples for external emails) and use them as few-shot references for how this user actually writes
+   - Pass all `corrections` with the draft; apply any whose `rule` addresses a pattern present in this draft (Claude determines relevance — not a keyword match)
 
 **`openingStyle` behavior:**
 - `"direct"` — No greeting. Open with the first substantive sentence.
@@ -76,6 +87,11 @@ Present four options after the draft:
 
 - **approve** → proceed to step 7
 - **revise** → apply the user's direction and redraft, return to step 6
+  - After redrafting, if a voice profile exists for this account: identify the most materially changed phrase or sentence (not the whole draft), and append a correction to `config/voice-profile-{accountId}.json`:
+    ```json
+    { "date": "YYYY-MM-DD", "original": "...", "revised": "...", "rule": "one-sentence style principle" }
+    ```
+  - If the revised draft demonstrates a pattern not already well-represented in `sampleEmails`, offer: *"This revision is a good example of your voice. Add it to your sample emails?"* — the bank grows up to 10; if at 10, offer to replace the least contextually diverse example.
 - **adjust tone** → update tone settings and redraft, return to step 6
 - **cancel** → confirm *"Draft discarded — nothing saved."* and stop
 
