@@ -55,6 +55,22 @@ Otherwise, triage every account in `config/companies.json`.
    After all category output, add a divider and list every email in `deletionCandidates` across all accounts. Number them sequentially, one line each: `N. [Account] Sender Name — Subject`. End with:
    "Reply with numbers or ranges to delete (e.g. 'delete 1-12, 15'), or 'delete all'."
 
-   When approved, route by provider:
-   - Outlook accounts: `node scripts/delete-emails.js {account.id} {id1} {id2} ...`
-   - Gmail accounts: `node scripts/delete-gmail-emails.js {id1} {id2} ...`
+   **Immediately after rendering the list**, save the structured data to `data/pending-deletions.json`:
+   ```json
+   [
+     { "number": 1, "id": "<messageId>", "accountId": "healthcarema", "provider": "outlook", "sender": "Sender Name", "subject": "Subject line" },
+     ...
+   ]
+   ```
+   This file is the source of truth for deletion — it persists across context loss so the user's response always works.
+
+7. **Executing deletions:**
+   When the user replies with deletion instructions (e.g. "delete all", "delete 1-8, 10-19", "delete all except 9"):
+
+   a. Read `data/pending-deletions.json`
+   b. Parse the user's selection into a set of numbers to delete
+   c. Group the selected items by `accountId` and `provider`
+   d. Execute one command per account — no per-email approval:
+      - Outlook: `node scripts/delete-emails.js {accountId} {id1} {id2} ...`
+      - Gmail: `node scripts/delete-gmail-emails.js {id1} {id2} ...`
+   e. Report: "Deleted N emails across M accounts." and remove `data/pending-deletions.json`

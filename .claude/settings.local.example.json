@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node scripts/*)",
+      "Bash(node --test scripts/test/*)",
+      "Bash(npm install*)",
+      "Bash(npm test*)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "mcp__claude_ai_Gmail__*",
+      "Read(**/config/*)",
+      "Read(**/data/*)"
+    ]
+  }
+}

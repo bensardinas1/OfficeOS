@@ -74,6 +74,11 @@ export function matchesDownrank(email, downrankList) {
   return downrankList.some(term => text.includes(term.toLowerCase()));
 }
 
+export function matchesDeletionPattern(email, patterns) {
+  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
+  return patterns.some(pattern => text.includes(pattern.toLowerCase()));
+}
+
 export function matchesUrgencyFlags(email, flags) {
   const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
   return flags.some(flag => text.includes(flag.toLowerCase()));
@@ -152,7 +157,9 @@ export function classify(emails, accountId) {
     }
     result.categories[categoryId].emails.push(email);
 
-    if (categoryId === "ignore") {
+    const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
+    const deletionCategoryIds = new Set(policy.categories);
+    if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns)) {
       result.deletionCandidates.push(email);
     }
   }
@@ -165,7 +172,7 @@ function classifyPersonalEmail(email, categories) {
 
   if (/statement|bill|invoice|payment.due|balance.due|autopay|account.alert|due.date/.test(text)) return "bills";
   if (/appointment|your.visit|check.?up|scheduled|reminder|seeing.you/.test(text)) return "appointments";
-  if (/order|shipped|delivered|tracking|return|refund|receipt/.test(text)) return "shopping";
+  if (/order|shipped|delivered|tracking|\breturn\b|refund|receipt/.test(text)) return "shopping";
   if (/subscription|renewal|renew|expires|membership|plan.change/.test(text)) return "subscriptions";
 
   // Default personal fallback — newsletters if available, otherwise first non-hidden category
