@@ -118,14 +118,14 @@ export const emails = {
     toRecipients: "user@testbiz.com", ccRecipients: "", gmailCategories: [],
   },
   bulkTwoSignals: {
-    id: "b6", subject: "Hot listings this week", from: "news@mail.reblast.com",
+    id: "b6", subject: "Hot listings this week", from: "contact@reblast.com",
     fromName: "RE Blast", preview: "Check out these hot new listings",
     received: "2026-03-14T12:05:00Z",
     hasListUnsubscribe: true, precedence: null,
     toRecipients: "", ccRecipients: "", gmailCategories: [],
   },
   bulkThreeSignals: {
-    id: "b7", subject: "NNN deals you can't miss", from: "promo@email.nnndeals.com",
+    id: "b7", subject: "NNN deals you can't miss", from: "promo@nnndeals.com",
     fromName: "NNN Deals", preview: "Triple net lease opportunities",
     received: "2026-03-14T12:06:00Z",
     hasListUnsubscribe: true, precedence: "bulk",

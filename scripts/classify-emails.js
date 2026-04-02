@@ -84,6 +84,47 @@ export function matchesUrgencyFlags(email, flags) {
   return flags.some(flag => text.includes(flag.toLowerCase()));
 }
 
+const MARKETING_SUBDOMAINS = ["mail.", "email.", "news.", "marketing.", "updates.", "info.", "noreply."];
+
+export function detectBulkSignals(email, userEmail) {
+  const signals = [];
+
+  // 1. List-Unsubscribe header
+  if (email.hasListUnsubscribe) {
+    signals.push("list-unsubscribe");
+  }
+
+  // 2. Precedence header
+  const prec = (email.precedence || "").toLowerCase();
+  if (prec === "bulk" || prec === "list") {
+    signals.push("precedence");
+  }
+
+  // 3. Gmail category labels
+  const cats = email.gmailCategories || [];
+  if (cats.includes("CATEGORY_PROMOTIONS") || cats.includes("CATEGORY_FORUMS")) {
+    signals.push("gmail-category");
+  }
+
+  // 4. BCC detection — user's email not in To or CC
+  if (userEmail) {
+    const to = (email.toRecipients || "").toLowerCase();
+    const cc = (email.ccRecipients || "").toLowerCase();
+    const me = userEmail.toLowerCase();
+    if (!to.includes(me) && !cc.includes(me)) {
+      signals.push("bcc");
+    }
+  }
+
+  // 5. Marketing subdomain
+  const fromDomain = (email.from || "").split("@")[1] || "";
+  if (MARKETING_SUBDOMAINS.some(prefix => fromDomain.startsWith(prefix))) {
+    signals.push("marketing-subdomain");
+  }
+
+  return { score: signals.length, signals };
+}
+
 export function classifyEmail(email, account, typeConfig, categories, downrankList) {
   // 1. Downrank check (type defaults + account-level) → IGNORE
   if (matchesDownrank(email, downrankList)) return "ignore";
@@ -149,17 +190,41 @@ export function classify(emails, accountId) {
     result.categories[cat.id] = { label: cat.label, hidden: cat.hidden || false, emails: [] };
   }
 
+  // Merge neverDelete and alwaysDelete from type defaults + account overrides
+  const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
+  const neverDeleteList = [
+    ...(policy.neverDelete || []),
+    ...(account.neverDelete || []),
+  ];
+  const alwaysDeleteList = [
+    ...(policy.alwaysDelete || []),
+    ...(account.alwaysDelete || []),
+  ];
+  const deletionCategoryIds = new Set(policy.categories);
+
   for (const email of emails) {
     let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+
+    // alwaysDelete overrides category — reclassify to ignore so it doesn't appear in visible sections
+    if (matchesSender(email, alwaysDeleteList)) {
+      categoryId = "ignore";
+    }
 
     if (!result.categories[categoryId]) {
       result.categories[categoryId] = { label: categoryId, hidden: false, emails: [] };
     }
     result.categories[categoryId].emails.push(email);
 
-    const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
-    const deletionCategoryIds = new Set(policy.categories);
-    if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns)) {
+    // alwaysDelete — force into deletion candidates
+    if (matchesSender(email, alwaysDeleteList)) {
+      result.deletionCandidates.push(email);
+    }
+    // neverDelete overrides category — never add to deletion candidates
+    else if (matchesSender(email, neverDeleteList)) {
+      // skip — protected sender
+    }
+    // Standard category/pattern-based deletion
+    else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns)) {
       result.deletionCandidates.push(email);
     }
   }

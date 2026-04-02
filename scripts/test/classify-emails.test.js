@@ -8,6 +8,7 @@ import {
   matchesUrgencyFlags,
   classifyEmail,
   applyNoiseFilter,
+  detectBulkSignals,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -190,6 +191,64 @@ describe("applyNoiseFilter", () => {
 
   it("returns false when noiseFilters is null", () => {
     assert.ok(!applyNoiseFilter(emails.newsletter, null));
+  });
+});
+
+describe("detectBulkSignals", () => {
+  const userEmail = "user@testbiz.com";
+
+  it("returns score 0 for non-bulk email", () => {
+    const result = detectBulkSignals(emails.fromInternalDomain, userEmail);
+    assert.equal(result.score, 0);
+    assert.deepEqual(result.signals, []);
+  });
+
+  it("detects List-Unsubscribe header", () => {
+    const result = detectBulkSignals(emails.bulkWithUnsubscribe, userEmail);
+    assert.ok(result.signals.includes("list-unsubscribe"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects Precedence: bulk", () => {
+    const result = detectBulkSignals(emails.bulkWithPrecedence, userEmail);
+    assert.ok(result.signals.includes("precedence"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects Gmail CATEGORY_PROMOTIONS", () => {
+    const result = detectBulkSignals(emails.bulkGmailPromo, userEmail);
+    assert.ok(result.signals.includes("gmail-category"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects BCC (user email not in To or CC)", () => {
+    const result = detectBulkSignals(emails.bulkBccDetected, userEmail);
+    assert.ok(result.signals.includes("bcc"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects marketing subdomain (mail.)", () => {
+    const result = detectBulkSignals(emails.bulkMarketingSubdomain, userEmail);
+    assert.ok(result.signals.includes("marketing-subdomain"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("scores multiple signals additively", () => {
+    const result = detectBulkSignals(emails.bulkTwoSignals, userEmail);
+    assert.equal(result.score, 2);
+    assert.ok(result.signals.includes("list-unsubscribe"));
+    assert.ok(result.signals.includes("bcc"));
+  });
+
+  it("scores three signals", () => {
+    const result = detectBulkSignals(emails.bulkThreeSignals, userEmail);
+    assert.equal(result.score, 3);
+  });
+
+  it("does not flag direct email to user as BCC", () => {
+    const directEmail = { ...emails.fyi, toRecipients: "user@testbiz.com", ccRecipients: "" };
+    const result = detectBulkSignals(directEmail, userEmail);
+    assert.ok(!result.signals.includes("bcc"));
   });
 });
 
