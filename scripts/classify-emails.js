@@ -106,12 +106,13 @@ export function detectBulkSignals(email, userEmail) {
     signals.push("gmail-category");
   }
 
-  // 4. BCC detection — user's email not in To or CC
+  // 4. BCC detection — user's email not in To or CC (only when To/CC data is present)
   if (userEmail) {
     const to = (email.toRecipients || "").toLowerCase();
     const cc = (email.ccRecipients || "").toLowerCase();
     const me = userEmail.toLowerCase();
-    if (!to.includes(me) && !cc.includes(me)) {
+    const hasRecipientData = to.length > 0 || cc.length > 0;
+    if (hasRecipientData && !to.includes(me) && !cc.includes(me)) {
       signals.push("bcc");
     }
   }
@@ -129,7 +130,21 @@ export function classifyEmail(email, account, typeConfig, categories, downrankLi
   // 1. Downrank check (type defaults + account-level) → IGNORE
   if (matchesDownrank(email, downrankList)) return "ignore";
 
-  // 2. Rich category overrides — check each for its own senders, urgency flags, and downrank
+  // 2. Check if sender is protected (prioritySenders or neverDelete)
+  const allPrioritySenders = [
+    ...(account.prioritySenders || []),
+    ...(account.neverDelete || []),
+  ];
+  const isProtected = allPrioritySenders.length > 0 && matchesSender(email, allPrioritySenders);
+
+  // 3. Bulk signal check (skip for protected senders)
+  if (!isProtected) {
+    const threshold = account.bulkSignalThreshold ?? typeConfig.bulkSignalThreshold ?? 2;
+    const { score } = detectBulkSignals(email, account.myEmail);
+    if (score >= threshold) return "ignore";
+  }
+
+  // 4. Rich category overrides — check each for its own senders, urgency flags, and downrank
   for (const cat of categories) {
     if (cat.hidden) continue;
     if (cat.downrank && matchesDownrank(email, cat.downrank)) return "ignore";

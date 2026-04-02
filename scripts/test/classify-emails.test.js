@@ -277,6 +277,43 @@ function classifyWithFixtures(emailBatch, account, typeConfig) {
   return result;
 }
 
+describe("classifyEmail — bulk signal integration", () => {
+  const categories = resolveCategories(businessTypeConfig, businessAccount);
+  const downrankList = resolveDownrank(businessTypeConfig, businessAccount);
+
+  it("classifies 2-signal bulk email as ignore at threshold 2", () => {
+    const cat = classifyEmail(emails.bulkTwoSignals, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("classifies 1-signal bulk email as fyi at threshold 2 (below threshold)", () => {
+    const cat = classifyEmail(emails.bulkWithUnsubscribe, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "fyi");
+  });
+
+  it("classifies 3-signal bulk email as ignore at threshold 2", () => {
+    const cat = classifyEmail(emails.bulkThreeSignals, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("does NOT reclassify protected sender even with bulk signals", () => {
+    const cat = classifyEmail(emails.bulkFromProtectedSender, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "action"); // testbiz.com is a prioritySender domain
+  });
+
+  it("classifies 1-signal bulk email as ignore at threshold 1", () => {
+    const aggressiveTypeConfig = { ...businessTypeConfig, bulkSignalThreshold: 1 };
+    const cat = classifyEmail(emails.bulkWithUnsubscribe, businessAccount, aggressiveTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("respects account-level threshold override", () => {
+    const accountWithOverride = { ...businessAccount, bulkSignalThreshold: 1 };
+    const cat = classifyEmail(emails.bulkWithUnsubscribe, accountWithOverride, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+});
+
 describe("classify() — integration", () => {
   it("returns structured result with categories and deletionCandidates", () => {
     const emailBatch = [emails.fromInternalDomain, emails.newsletter, emails.withUrgencyFlag];

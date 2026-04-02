@@ -122,14 +122,14 @@ export const emails = {
     fromName: "RE Blast", preview: "Check out these hot new listings",
     received: "2026-03-14T12:05:00Z",
     hasListUnsubscribe: true, precedence: null,
-    toRecipients: "", ccRecipients: "", gmailCategories: [],
+    toRecipients: "undisclosed-recipients:;", ccRecipients: "", gmailCategories: [],
   },
   bulkThreeSignals: {
     id: "b7", subject: "NNN deals you can't miss", from: "promo@nnndeals.com",
     fromName: "NNN Deals", preview: "Triple net lease opportunities",
     received: "2026-03-14T12:06:00Z",
     hasListUnsubscribe: true, precedence: "bulk",
-    toRecipients: "", ccRecipients: "", gmailCategories: [],
+    toRecipients: "undisclosed-recipients:;", ccRecipients: "", gmailCategories: [],
   },
   bulkFromProtectedSender: {
     id: "b8", subject: "Monthly newsletter from partner", from: "news@testbiz.com",
