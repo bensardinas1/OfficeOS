@@ -122,7 +122,7 @@ async function fetchGmail(hours, maxResults) {
           userId: "me",
           id,
           format: "metadata",
-          metadataHeaders: ["From", "Subject", "Date"],
+          metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe", "Precedence", "To", "Cc"],
         })
       )
     );
@@ -158,6 +158,11 @@ async function fetchGmail(hours, maxResults) {
           (p) => p.filename && p.filename.length > 0
         ),
         preview: (res.data.snippet || "").slice(0, 300),
+        hasListUnsubscribe: !!getHeader("List-Unsubscribe"),
+        precedence: getHeader("Precedence") || null,
+        toRecipients: getHeader("To"),
+        ccRecipients: getHeader("Cc"),
+        gmailCategories: labelIds.filter((l) => l.startsWith("CATEGORY_")),
       });
     }
   }
