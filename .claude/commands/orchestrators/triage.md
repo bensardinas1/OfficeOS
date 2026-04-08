@@ -1,76 +1,94 @@
 Run a full inbox triage across all configured accounts. $ARGUMENTS
 
 If $ARGUMENTS specifies one or more account IDs (comma-separated), triage only those.
+Optionally append hours and max Gmail results: `personal,healthcarema 48 200`.
 Otherwise, triage every account in `config/companies.json`.
 
-1. Load `config/companies.json` and `config/prefs.json`.
+---
 
-2. **Fetch and classify each account** — Outlook accounts sequentially (to avoid auth token conflicts), Gmail accounts via MCP:
-   - `"outlook"`: `node scripts/fetch-emails.js {account.id} 24 inbox | node scripts/classify-emails.js {account.id}`
-   - `"gmail"`: use MCP `gmail_search_messages` for the last 24 hours, then pass result as JSON to stdin: `echo '<json>' | node scripts/classify-emails.js {account.id}`
-     - If MCP is unavailable, skip and warn: "Gmail account '{account.name}' skipped — MCP unavailable"
+## Phase 1: Fetch and pre-filter
 
-   The processor returns `{ accountId, accountName, accountType, categories, deletionCandidates }`.
-   Track the result (email count or error) for each account.
+Run the triage script in raw mode:
+```
+node scripts/triage.js --raw {accountIds|all} {hours} {maxGmail}
+```
+Defaults: all accounts, hours=24, maxGmail=100.
 
-3. Output a fetch summary using `prefs.display.fetchSummary` before the triage results:
-   - `"inline-icons"` → `✅/❌/⚠️ AccountName (N emails) · ... — {date} · Last 24h`
-   - `"inline"` → same line without icons
-   - `"table"` → one row per account with account, mailbox, count, window columns
-   - `"none"` → skip entirely
-   Use `prefs.display.statusIcons` for the icon values.
+The script returns JSON with three arrays:
+- `highKeep` — emails the script confidently classified as important (action/respond)
+- `highDelete` — emails the script confidently classified as deletable (bulk/spam/alwaysDelete)
+- `uncertain` — emails that need Claude's judgment
 
-4. **Output — Business accounts** (those with `dailyBrief.section: "main"` in their resolved type config):
+## Phase 2: Classify the uncertain middle
 
-   ## Action Items — All Business Accounts
-   Single prioritized list across all business accounts. Sort by urgency (blocking > response needed > time-sensitive).
-   For each: **[Account]** **[From]** Subject — one line on what's needed and suggested next step.
+1. **Load the attention profile** from `config/attention-profile.md`. This is your briefing on who the user is, their key relationships, and their judgment principles.
 
-   ## News & Market Digest
-   One brief paragraph per business account that had relevant industry or market emails.
-   Skip accounts with nothing notable.
+2. **For each uncertain email**, classify it using your judgment:
+   - **Action/Respond** — requires the user's attention or reply
+   - **FYI** — informational, worth seeing but no action needed
+   - **Deletion candidate** — noise, marketing, or irrelevant
 
-   ## FYI
-   Short list of informational items across all business accounts worth awareness but requiring no action.
-   Label each with the account name.
+   Use the attention profile principles. If an email's sender or topic relates to a known relationship or organization, check the memory index (`memory/MEMORY.md`) and load the relevant memory file for detail.
 
-5. **Output — Personal accounts** (those with `dailyBrief.section: "personal-appendix"` in their resolved type config):
-   If any personal accounts were triaged, add a divider and:
+3. **Merge your classifications** with the script's high-confidence decisions:
+   - `highKeep` emails → Action Items (business) or Respond (personal)
+   - `highDelete` emails → Deletion Candidates
+   - Your classified uncertain emails → their assigned categories
 
-   ---
+## Phase 3: Format and present
 
-   ## Personal Triage
+Format the merged results as markdown. Load `config/prefs.json` for display settings.
 
-   For each personal account, render categories in array order from the processor result. Skip categories marked `hidden: true`. For each visible category with emails:
+**Business accounts:**
+- `## Action Items — All Business Accounts` — one bullet per email: `- **[Account]** **[Sender]** Subject`
+- `## FYI` — one bullet per email: `- **[Account]** Sender — Subject`
 
-   ### {category.label}
-   For each: **[From]** Subject — one line summary
+**Personal accounts:**
+- `## Personal Triage` — grouped by category with `### Category Label` headers
 
-   ### Everything Else
-   Brief count of remaining categorized items not shown above: "N shopping/orders, N newsletters — nothing urgent"
+**Deletion Candidates:**
+- `## Deletion Candidates` — **EVERY candidate individually numbered**. Never summarize, compress, or group this list.
+- Format: `N. [Account] Sender — Subject`
+- End with: `Reply with numbers or ranges to delete (e.g. 'delete 1-12, 15'), or 'delete all'.`
 
-   Skip the IGNORE bucket entirely in all sections. Surface the most urgent items first.
+**Save pending deletions** to `data/pending-deletions.json`:
+```json
+[{ "number": 1, "id": "...", "accountId": "...", "provider": "...", "sender": "...", "subject": "..." }]
+```
 
-6. **Deletion candidates:**
-   After all category output, add a divider and list every email in `deletionCandidates` across all accounts. Number them sequentially, one line each: `N. [Account] Sender Name — Subject`. End with:
-   "Reply with numbers or ranges to delete (e.g. 'delete 1-12, 15'), or 'delete all'."
+## Phase 4: Executing deletions
 
-   **Immediately after rendering the list**, save the structured data to `data/pending-deletions.json`:
-   ```json
-   [
-     { "number": 1, "id": "<messageId>", "accountId": "healthcarema", "provider": "outlook", "sender": "Sender Name", "subject": "Subject line" },
-     ...
-   ]
-   ```
-   This file is the source of truth for deletion — it persists across context loss so the user's response always works.
+When the user replies with deletion instructions (e.g. "delete all", "delete 1-8, 10-19", "delete all except 9"):
 
-7. **Executing deletions:**
-   When the user replies with deletion instructions (e.g. "delete all", "delete 1-8, 10-19", "delete all except 9"):
+a. Read `data/pending-deletions.json`
+b. Parse the user's selection into a set of numbers to delete
+c. Group the selected items by `accountId` and `provider`
+d. Execute one command per account — no per-email approval:
+   - Outlook: `node scripts/delete-emails.js {accountId} {id1} {id2} ...`
+   - Gmail: `node scripts/delete-gmail-emails.js {id1} {id2} ...`
+e. Report: "Deleted N emails across M accounts." and remove `data/pending-deletions.json`
 
-   a. Read `data/pending-deletions.json`
-   b. Parse the user's selection into a set of numbers to delete
-   c. Group the selected items by `accountId` and `provider`
-   d. Execute one command per account — no per-email approval:
-      - Outlook: `node scripts/delete-emails.js {accountId} {id1} {id2} ...`
-      - Gmail: `node scripts/delete-gmail-emails.js {id1} {id2} ...`
-   e. Report: "Deleted N emails across M accounts." and remove `data/pending-deletions.json`
+## Phase 5: Capture feedback
+
+After deletions execute, **if the user made any explicit statements** about senders or organizations during this session (e.g. "Ari is a friend", "I'm a Hurricane Club member", "GitHub bot emails are trash"), write those as memory files immediately. Update the attention profile if the statement reflects a durable truth about the user's world.
+
+**Log the session** by appending to `data/triage-log.md`:
+```markdown
+## {date}
+Accounts: {accountIds}
+Kept from deletion list: {numbers and senders the user chose to keep}
+Explicit: {any statements made} → {action taken}
+Deleted: {count} emails across {count} accounts
+```
+
+Do NOT analyze patterns after every session. Pattern analysis happens when the user asks ("What have you learned?") or when the log reaches ~10 sessions (mention it once, don't nag).
+
+---
+
+## Fallback
+
+If the `--raw` script call fails or returns unexpected data, fall back to the old formatted mode:
+```
+node scripts/triage.js {accountIds|all} {hours} {maxGmail}
+```
+Display the formatted output directly. The system degrades gracefully.
