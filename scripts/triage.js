@@ -18,7 +18,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { classify } from "./classify-emails.js";
+import { classify, detectBulkSignals } from "./classify-emails.js";
 import { buildGraphClient } from "./graph-client.js";
 import { buildGmailClient } from "./gmail-client.js";
 import "dotenv/config";
@@ -337,13 +337,96 @@ function renderDeletionCandidates(allResults) {
 }
 
 // ---------------------------------------------------------------------------
+// Raw output builder
+// ---------------------------------------------------------------------------
+
+function buildRawOutput(results, accountTypes) {
+  const highKeep = [];
+  const highDelete = [];
+  const uncertain = [];
+
+  // Build a lookup for account myEmail (needed for BCC detection in bulk signals)
+  const companiesJson = JSON.parse(
+    readFileSync(join(ROOT, "config/companies.json"), "utf-8")
+  );
+  const accountEmailMap = {};
+  for (const c of companiesJson.companies) {
+    accountEmailMap[c.id] = c.myEmail || "";
+  }
+
+  for (const r of results) {
+    const classified = r.classified;
+    const accountId = r.accountId;
+    const provider = r.provider;
+    const accountName = r.name;
+
+    // Walk through each category's emails
+    for (const [catId, cat] of Object.entries(classified.categories)) {
+      for (const email of cat.emails) {
+        const entry = {
+          id: email.id,
+          accountId,
+          accountName,
+          provider,
+          sender: email.fromName,
+          senderEmail: email.from,
+          subject: email.subject,
+          isRead: email.isRead,
+          hasAttachments: email.hasAttachments,
+          bulkSignals: detectBulkSignals(email, accountEmailMap[accountId] || "").signals,
+          category: catId,
+          categoryLabel: cat.label,
+        };
+
+        const isDeletionCandidate = classified.deletionCandidates.some(
+          (d) => d.id === email.id
+        );
+
+        // High-confidence delete: script classified as ignore AND is a deletion candidate
+        // This covers alwaysDelete senders, bulk signal hits, downrank matches
+        if (catId === "ignore" && isDeletionCandidate) {
+          entry.reason = "Script: deletion candidate (bulk/spam/alwaysDelete)";
+          highDelete.push(entry);
+        }
+        // High-confidence keep: script classified into action/respond category
+        // or sender matches prioritySenders/neverDelete
+        else if (catId === "action" || catId === "respond") {
+          entry.reason = "Script: action/respond category";
+          highKeep.push(entry);
+        }
+        // Everything else is uncertain — Claude will classify
+        else {
+          uncertain.push(entry);
+        }
+      }
+    }
+  }
+
+  return {
+    fetchedAt: new Date().toISOString(),
+    accounts: results.map((r) => ({
+      id: r.accountId,
+      name: r.name,
+      provider: r.provider,
+      accountType: r.accountType,
+      emailCount: r.count,
+    })),
+    highKeep,
+    highDelete,
+    uncertain,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const accountFilter = process.argv[2] || "all";
-  const hours = parseInt(process.argv[3] || "24", 10);
-  const maxGmail = parseInt(process.argv[4] || "100", 10);
+  const rawMode = process.argv.includes("--raw");
+  const args = process.argv.slice(2).filter(a => a !== "--raw");
+  const accountFilter = args[0] || "all";
+  const hours = parseInt(args[1] || "24", 10);
+  const maxGmail = parseInt(args[2] || "100", 10);
 
   const { companies, accountTypes, prefs } = loadConfig();
 
@@ -384,13 +467,17 @@ async function main() {
     }
   }
 
-  // Output
-  const output = [];
+  // --- RAW MODE: return structured JSON for Claude to classify ---
+  if (rawMode) {
+    const raw = buildRawOutput(results, accountTypes);
+    console.log(JSON.stringify(raw, null, 2));
+    return;
+  }
 
-  // Fetch summary line
+  // --- FORMATTED MODE: existing markdown output ---
+  const output = [];
   output.push(formatFetchSummary(fetchSummary, prefs));
 
-  // Split by section
   const businessResults = results.filter((r) => {
     const tc = accountTypes[r.accountType];
     return tc?.dailyBrief?.section === "main";
@@ -408,7 +495,6 @@ async function main() {
     output.push(renderPersonalSection(personalResults));
   }
 
-  // Deletion candidates + save to disk
   const { text: deletionText, pendingDeletions } =
     renderDeletionCandidates(results);
   output.push(deletionText);
