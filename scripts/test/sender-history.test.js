@@ -8,7 +8,8 @@ import {
   saveHistory,
   recordDeletion,
   recordKeep,
-  thresholdCrossed
+  thresholdCrossed,
+  splitKey
 } from "../sender-history.js";
 
 let tmpDir;
@@ -106,5 +107,35 @@ describe("thresholdCrossed", () => {
 
   it("returns false when entry is undefined", () => {
     assert.equal(thresholdCrossed(undefined, 5), false);
+  });
+});
+
+describe("splitKey", () => {
+  it("splits a normal key", () => {
+    const r = splitKey("personal:foo@x.com");
+    assert.equal(r.accountId, "personal");
+    assert.equal(r.senderEmail, "foo@x.com");
+  });
+
+  it("returns the whole key as accountId when no separator present", () => {
+    const r = splitKey("malformed");
+    assert.equal(r.accountId, "malformed");
+    assert.equal(r.senderEmail, "");
+  });
+
+  it("preserves later colons in the email portion (defensive)", () => {
+    // Email addresses cannot contain colons per RFC 5321, but be defensive
+    // in case future state files have unexpected content.
+    const r = splitKey("personal:weird:value");
+    assert.equal(r.accountId, "personal");
+    assert.equal(r.senderEmail, "weird:value");
+  });
+});
+
+describe("loadHistory — corrupt JSON resilience", () => {
+  it("returns empty object on malformed JSON instead of throwing", () => {
+    writeFileSync(historyPath, "{not valid json");
+    const h = loadHistory(historyPath);
+    assert.deepEqual(h, {});
   });
 });

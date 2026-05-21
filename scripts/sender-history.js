@@ -9,24 +9,56 @@
  * Values: { deletedCount, lastDeletedAt, hasListUnsubscribe }
  */
 
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, copyFileSync, unlinkSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export function loadHistory(historyPath) {
   if (!existsSync(historyPath)) return {};
-  const raw = readFileSync(historyPath, "utf-8");
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(readFileSync(historyPath, "utf-8"));
+  } catch {
+    // Corrupt or unreadable state file — start fresh rather than crash.
+    // Auto-trash counters will rebuild on subsequent runs.
+    return {};
+  }
 }
 
 export function saveHistory(historyPath, history) {
   mkdirSync(dirname(historyPath), { recursive: true });
   const tmpPath = `${historyPath}.tmp`;
   writeFileSync(tmpPath, JSON.stringify(history, null, 2), "utf-8");
-  renameSync(tmpPath, historyPath);
+  try {
+    renameSync(tmpPath, historyPath);
+  } catch (err) {
+    // Windows + OneDrive can throw EPERM on rename when the target file
+    // is briefly locked by the sync agent. EXDEV can occur across mount
+    // boundaries. Fall back to copy+unlink — not strictly atomic, but
+    // recoverable rather than crashing the entire run.
+    if (err.code === "EPERM" || err.code === "EXDEV") {
+      copyFileSync(tmpPath, historyPath);
+      unlinkSync(tmpPath);
+    } else {
+      throw err;
+    }
+  }
 }
 
 function keyFor(accountId, senderEmail) {
   return `${accountId}:${(senderEmail || "").toLowerCase()}`;
+}
+
+/**
+ * Splits a history key back into its components.
+ *
+ * Account IDs must not contain ":" (this is the only invariant the key
+ * encoding requires). Email addresses cannot contain ":" per RFC 5321.
+ *
+ * Returns { accountId, senderEmail }.
+ */
+export function splitKey(key) {
+  const idx = key.indexOf(":");
+  if (idx < 0) return { accountId: key, senderEmail: "" };
+  return { accountId: key.slice(0, idx), senderEmail: key.slice(idx + 1) };
 }
 
 export function recordDeletion(history, accountId, senderEmail, { hasListUnsubscribe, timestamp }) {
