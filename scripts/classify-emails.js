@@ -286,7 +286,7 @@ export function classify(emails, accountId) {
       // skip — protected sender
     }
     // Standard category/pattern-based deletion
-    else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns)) {
+    else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns || [])) {
       result.deletionCandidates.push(email);
     }
   }
