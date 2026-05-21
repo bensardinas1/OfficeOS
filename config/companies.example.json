@@ -23,6 +23,14 @@
         "flags": ["urgent", "deadline", "request", "please review"]
       },
       "downrank": ["bulk email", "newsletters", "marketing", "unsubscribe"],
+      "scamPatterns": [
+        {
+          "label": "Annual Report filing scam (rotating third-party domains)",
+          "subjectAll": ["annual report"],
+          "senderAllowlist": ["sunbiz.org"],
+          "action": "delete"
+        }
+      ],
       "outputs": {
         "primary": "Executive summary of emails requiring action",
         "secondary": "News and market summary",
@@ -69,6 +77,16 @@
       "prioritySenders": [],
       "urgencyRules": { "flags": [] },
       "downrank": [],
+      "alwaysDelete": [
+        {
+          "type": "name",
+          "value": "eBay",
+          "label": "eBay marketing (transactional allowed)",
+          "unless": {
+            "subjectContains": ["delivered", "shipped", "out for delivery", "order", "security", "device", "message", "buyer", "seller", "feedback"]
+          }
+        }
+      ],
       "categoryOverrides": [
         {
           "id": "my-hobby",
