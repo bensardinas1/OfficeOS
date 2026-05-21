@@ -90,11 +90,24 @@ export function senderRuleApplies(email, rule) {
 }
 
 /**
- * Placeholder export for matchesScamPattern — replaced by full implementation in Task 2.
- * Returns false so it has no effect during Task 1.
+ * Returns true if the email matches the scamPattern:
+ *   - subject contains ALL of pattern.subjectAll (case-insensitive)
+ *   - sender's domain is NOT in pattern.senderAllowlist (case-insensitive)
+ *
+ * Empty subjectAll never matches (defensive). Used to catch recurring scams
+ * that arrive from rotating third-party domains (e.g., Annual Report filing scam).
  */
-export function matchesScamPattern(_email, _pattern) {
-  return false;
+export function matchesScamPattern(email, pattern) {
+  const subjectAll = pattern.subjectAll || [];
+  if (subjectAll.length === 0) return false;
+  const subject = (email.subject || "").toLowerCase();
+  for (const term of subjectAll) {
+    if (!subject.includes(term.toLowerCase())) return false;
+  }
+  const fromDomain = ((email.from || "").split("@")[1] || "").toLowerCase();
+  const allowlist = (pattern.senderAllowlist || []).map(d => d.toLowerCase());
+  if (allowlist.includes(fromDomain)) return false;
+  return true;
 }
 
 export function matchesDownrank(email, downrankList) {
@@ -243,15 +256,19 @@ export function classify(emails, accountId) {
     ...(policy.alwaysDelete || []),
     ...(account.alwaysDelete || []),
   ];
+  const scamPatterns = account.scamPatterns || [];
   const deletionCategoryIds = new Set(policy.categories);
 
   for (const email of emails) {
     let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
 
     const alwaysDeleteApplies = alwaysDeleteList.some(r => senderRuleApplies(email, r));
+    const scamApplies = scamPatterns.some(p => matchesScamPattern(email, p));
+    const isProtected = matchesSender(email, neverDeleteList);
+    const forceDelete = (alwaysDeleteApplies || scamApplies) && !isProtected;
 
-    // alwaysDelete overrides category — reclassify to ignore so it doesn't appear in visible sections
-    if (alwaysDeleteApplies) {
+    // alwaysDelete / scamPatterns override category — reclassify to ignore
+    if (forceDelete) {
       categoryId = "ignore";
     }
 
@@ -260,12 +277,12 @@ export function classify(emails, accountId) {
     }
     result.categories[categoryId].emails.push(email);
 
-    // alwaysDelete — force into deletion candidates
-    if (alwaysDeleteApplies) {
+    // Force into deletion candidates
+    if (forceDelete) {
       result.deletionCandidates.push(email);
     }
-    // neverDelete overrides category — never add to deletion candidates
-    else if (matchesSender(email, neverDeleteList)) {
+    // neverDelete protects against pattern/category-based deletion
+    else if (isProtected) {
       // skip — protected sender
     }
     // Standard category/pattern-based deletion
