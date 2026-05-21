@@ -30,15 +30,45 @@ export function proposalId(timestamp, counter) {
 }
 
 export function isPendingProposal(proposals, target, payloadValue) {
-  return proposals.some(p =>
-    p.status === "pending" &&
-    p.target === target &&
-    JSON.stringify(p.payload).toLowerCase().includes((payloadValue || "").toLowerCase())
-  );
+  const needle = (payloadValue || "").toLowerCase();
+  return proposals.some(p => {
+    if (p.status !== "pending") return false;
+    if (p.target !== target) return false;
+    const payload = p.payload || {};
+    // For alwaysDelete / neverDelete entries
+    if (typeof payload.value === "string" && payload.value.toLowerCase() === needle) return true;
+    // For scamPatterns entries (subjectAll is an array of phrases)
+    if (Array.isArray(payload.subjectAll) && payload.subjectAll.some(s => (s || "").toLowerCase() === needle)) return true;
+    return false;
+  });
 }
 
 function findAccount(accounts, accountId) {
   return accounts.find(a => a.id === accountId);
+}
+
+/**
+ * Returns the next counter value to use for proposals on `datePart` (YYYY-MM-DD),
+ * given the current proposals array. Looks at the maximum counter already in use
+ * for that date across ALL existing proposal IDs (any status).
+ *
+ * Contract: when the orchestrator calls multiple discovery functions in the same
+ * run, it MUST concatenate the output of each call into the proposals array
+ * passed to the next call. Otherwise this function will re-issue the same
+ * counter values to each caller. See the morning-brief orchestrator (Task 7)
+ * for the accumulator pattern.
+ */
+function nextCounterFor(proposals, datePart) {
+  let max = 0;
+  const pattern = new RegExp(`^p-${datePart}-(\\d{3})$`);
+  for (const p of proposals) {
+    const m = (p.id || "").match(pattern);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > max) max = n;
+    }
+  }
+  return max + 1;
 }
 
 function senderIsProtected(account, senderEmail) {
@@ -53,7 +83,8 @@ function senderIsProtected(account, senderEmail) {
 
 export function discoverAutoTrash(history, accounts, pendingProposals, { now }) {
   const proposals = [];
-  let counter = pendingProposals.length + 1;
+  const datePart = (now || "").slice(0, 10);
+  let counter = nextCounterFor(pendingProposals, datePart);
   for (const [key, entry] of Object.entries(history)) {
     const { accountId, senderEmail } = splitKey(key);
     if (!entry.hasListUnsubscribe) continue;
@@ -84,13 +115,14 @@ export function discoverAutoTrash(history, accounts, pendingProposals, { now }) 
  * across a set of subject strings. Stopwords filtered. Returns up to 2 terms.
  */
 function commonSubjectTerms(subjects) {
-  const STOPWORDS = new Set(["the", "a", "an", "your", "you", "is", "for", "of", "and", "to", "in", "on", "at", "2026", "2025", "re", "fw", "fwd"]);
+  const STOPWORDS = new Set(["the", "a", "an", "your", "you", "is", "for", "of", "and", "to", "in", "on", "at", "re", "fw", "fwd"]);
+  const NUMERIC_TOKEN = /^\d+$/;
   const sets = subjects.map(s =>
     new Set(
       s.toLowerCase()
         .replace(/[^a-z\s]/g, " ")
         .split(/\s+/)
-        .filter(w => w.length >= 4 && !STOPWORDS.has(w))
+        .filter(w => w.length >= 4 && !STOPWORDS.has(w) && !NUMERIC_TOKEN.test(w))
     )
   );
   if (sets.length === 0) return [];
@@ -104,7 +136,8 @@ function commonSubjectTerms(subjects) {
 
 export function discoverScamPatterns(recentDeletions, accounts, pendingProposals, { now }) {
   const proposals = [];
-  let counter = pendingProposals.length + 1;
+  const datePart = (now || "").slice(0, 10);
+  let counter = nextCounterFor(pendingProposals, datePart);
   const cutoff = new Date(now).getTime() - SCAM_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
   // group by account
@@ -187,7 +220,8 @@ export function discoverScamPatterns(recentDeletions, accounts, pendingProposals
 export function discoverMemoryBackfill(memoryDir, accounts, pendingProposals, { now }) {
   if (!existsSync(memoryDir)) return [];
   const proposals = [];
-  let counter = pendingProposals.length + 1;
+  const datePart = (now || "").slice(0, 10);
+  let counter = nextCounterFor(pendingProposals, datePart);
   const files = readdirSync(memoryDir).filter(f =>
     (f.startsWith("feedback_") || f.startsWith("relationship_")) && f.endsWith(".md")
   );
@@ -214,7 +248,10 @@ export function discoverMemoryBackfill(memoryDir, accounts, pendingProposals, { 
     );
     if (alreadyCovered) continue;
 
-    // Default to personal account if no signal; this is a hint, user can change on approval
+    // Default to personal account if no signal; this is a hint, user can change on approval.
+    // TODO(v2): move keyword→account routing into config/companies.json
+    // (e.g., per-account `memoryKeywords` array) so adding/renaming an account
+    // doesn't require code changes. See CLAUDE.md Golden Rule.
     const targetAccount = body.toLowerCase().includes("healthcare m&a") || body.toLowerCase().includes("hcma")
       ? "healthcarema"
       : "personal";

@@ -166,3 +166,55 @@ describe("discoverMemoryBackfill", () => {
     assert.equal(equinoxProposal, undefined);
   });
 });
+
+describe("proposal counter does not collide when same snapshot is passed twice", () => {
+  it("nextCounterFor-based counter starts from existing max for that date", () => {
+    const history = {
+      "personal:foo@x.com": { deletedCount: 7, hasListUnsubscribe: true, lastDeletedAt: "..." },
+      "personal:bar@x.com": { deletedCount: 6, hasListUnsubscribe: true, lastDeletedAt: "..." }
+    };
+    const accounts = [{ id: "personal", neverDelete: [], prioritySenders: [] }];
+    // Pre-existing proposals for today already used 001 and 002
+    const pending = [
+      { id: "p-2026-05-21-001", target: "companies.personal.alwaysDelete", payload: { type: "email", value: "old@x.com" }, status: "approved" },
+      { id: "p-2026-05-21-002", target: "companies.personal.alwaysDelete", payload: { type: "email", value: "older@x.com" }, status: "declined" }
+    ];
+    const result = discoverAutoTrash(history, accounts, pending, { now: "2026-05-21T06:00:00Z" });
+    assert.equal(result.length, 2);
+    // IDs should be 003 and 004 — strictly greater than max existing counter
+    const ids = result.map(p => p.id).sort();
+    assert.equal(ids[0], "p-2026-05-21-003");
+    assert.equal(ids[1], "p-2026-05-21-004");
+  });
+});
+
+describe("isPendingProposal — exact field equality", () => {
+  it("returns true on exact value match (alwaysDelete payload)", () => {
+    const proposals = [
+      { id: "p-1", target: "companies.personal.alwaysDelete", payload: { type: "email", value: "foo@x.com" }, status: "pending" }
+    ];
+    assert.equal(isPendingProposal(proposals, "companies.personal.alwaysDelete", "foo@x.com"), true);
+  });
+
+  it("returns false on substring-only match (not exact)", () => {
+    const proposals = [
+      { id: "p-1", target: "companies.personal.alwaysDelete", payload: { type: "name", value: "annual reporting strategy" }, status: "pending" }
+    ];
+    // Substring "annual report" is inside but should not match exactly
+    assert.equal(isPendingProposal(proposals, "companies.personal.alwaysDelete", "annual report"), false);
+  });
+
+  it("returns true for scamPatterns when subjectAll contains exact phrase", () => {
+    const proposals = [
+      { id: "p-1", target: "companies.summitmiami.scamPatterns", payload: { subjectAll: ["annual report"], senderAllowlist: [] }, status: "pending" }
+    ];
+    assert.equal(isPendingProposal(proposals, "companies.summitmiami.scamPatterns", "annual report"), true);
+  });
+
+  it("returns false when target does not match", () => {
+    const proposals = [
+      { id: "p-1", target: "companies.personal.alwaysDelete", payload: { value: "foo@x.com" }, status: "pending" }
+    ];
+    assert.equal(isPendingProposal(proposals, "companies.summitmiami.scamPatterns", "foo@x.com"), false);
+  });
+});
