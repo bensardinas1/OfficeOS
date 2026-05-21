@@ -9,6 +9,8 @@ import {
   classifyEmail,
   applyNoiseFilter,
   detectBulkSignals,
+  senderRuleApplies,
+  matchesScamPattern,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -334,5 +336,105 @@ describe("classify() — integration", () => {
   it("puts priority sender in action category for business account", () => {
     const result = classifyWithFixtures([emails.fromInternalDomain], businessAccount, businessTypeConfig);
     assert.ok(result.categories.action.emails.length > 0);
+  });
+});
+
+// Helper that bypasses loadConfig() by injecting account + type directly.
+// Used by tests that want to test classify() behavior without filesystem config.
+function classifyWithAccount(emails, account, typeConfig) {
+  // Reproduce the inner logic of classify() that runs after loadConfig.
+  const categories = resolveCategories(typeConfig, account);
+  const downrankList = resolveDownrank(typeConfig, account);
+  const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
+  const neverDeleteList = [...(policy.neverDelete || []), ...(account.neverDelete || [])];
+  const alwaysDeleteList = [...(policy.alwaysDelete || []), ...(account.alwaysDelete || [])];
+  const scamPatterns = account.scamPatterns || [];
+  const deletionCategoryIds = new Set(policy.categories);
+
+  const result = { categories: {}, deletionCandidates: [] };
+  for (const cat of categories) result.categories[cat.id] = { label: cat.label, emails: [] };
+
+  for (const email of emails) {
+    let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+    const alwaysDeleteHit = alwaysDeleteList.find(r => senderRuleApplies(email, r));
+    const scamHit = scamPatterns.find(p => matchesScamPattern(email, p));
+    if (alwaysDeleteHit || scamHit) categoryId = "ignore";
+    if (!result.categories[categoryId]) result.categories[categoryId] = { label: categoryId, emails: [] };
+    result.categories[categoryId].emails.push(email);
+    if (alwaysDeleteHit || scamHit) {
+      result.deletionCandidates.push(email);
+    } else if (matchesSender(email, neverDeleteList)) {
+      // protected
+    } else if (deletionCategoryIds.has(categoryId)) {
+      result.deletionCandidates.push(email);
+    }
+  }
+  return result;
+}
+
+describe("senderRuleApplies — unless clause on alwaysDelete", () => {
+  const ebayMarketingRule = {
+    type: "name",
+    value: "eBay",
+    label: "eBay marketing",
+    unless: {
+      subjectContains: ["delivered", "out for delivery", "order", "security", "buyer", "seller"]
+    }
+  };
+
+  it("returns true when sender matches and unless is not present", () => {
+    const rule = { type: "name", value: "eBay", label: "eBay" };
+    const email = { fromName: "eBay", subject: "Big sale this week" };
+    assert.equal(senderRuleApplies(email, rule), true);
+  });
+
+  it("returns false when sender matches but unless.subjectContains matches", () => {
+    const email = { fromName: "eBay", subject: "Your order is OUT FOR DELIVERY" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), false);
+  });
+
+  it("returns true when sender matches and unless.subjectContains does not match", () => {
+    const email = { fromName: "eBay", subject: "Deal Days — extra 20% off" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), true);
+  });
+
+  it("returns false when sender does not match (regardless of unless)", () => {
+    const email = { fromName: "Amazon", subject: "Your order is delivered" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), false);
+  });
+
+  it("unless.subjectContains is case-insensitive", () => {
+    const email = { fromName: "ebay", subject: "ORDER confirmed" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), false);
+  });
+});
+
+describe("classify-emails — unless clause on personal alwaysDelete", () => {
+  const personalAccountWithEbayUnless = {
+    ...personalAccount,
+    alwaysDelete: [
+      {
+        type: "name",
+        value: "eBay",
+        label: "eBay marketing",
+        unless: { subjectContains: ["delivered", "order", "security"] }
+      }
+    ]
+  };
+
+  it("keeps eBay transactional email out of deletion candidates", () => {
+    const emails = [
+      { id: "1", fromName: "eBay", from: "noreply@ebay.com", subject: "Your order is delivered" }
+    ];
+    const result = classifyWithAccount(emails, personalAccountWithEbayUnless, personalTypeConfig);
+    assert.equal(result.deletionCandidates.length, 0);
+  });
+
+  it("deletes eBay promotional email", () => {
+    const emails = [
+      { id: "1", fromName: "eBay", from: "noreply@ebay.com", subject: "Flash deal — 50% off" }
+    ];
+    const result = classifyWithAccount(emails, personalAccountWithEbayUnless, personalTypeConfig);
+    assert.equal(result.deletionCandidates.length, 1);
   });
 });

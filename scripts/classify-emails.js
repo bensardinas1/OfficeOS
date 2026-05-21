@@ -69,6 +69,32 @@ export function matchesSender(email, senders) {
   return false;
 }
 
+/**
+ * Returns true if `rule` matches `email` (using same logic as matchesSender for a single sender)
+ * AND the rule's `unless` clause (if present) does NOT match.
+ *
+ * Used for alwaysDelete entries to support conditional senders like:
+ *   { type: "name", value: "eBay", unless: { subjectContains: ["delivered", "order"] } }
+ */
+export function senderRuleApplies(email, rule) {
+  if (!matchesSender(email, [rule])) return false;
+  if (!rule.unless) return true;
+  const subject = (email.subject || "").toLowerCase();
+  const unlessSubject = rule.unless.subjectContains || [];
+  for (const term of unlessSubject) {
+    if (subject.includes(term.toLowerCase())) return false;
+  }
+  return true;
+}
+
+/**
+ * Placeholder export for matchesScamPattern — replaced by full implementation in Task 2.
+ * Returns false so it has no effect during Task 1.
+ */
+export function matchesScamPattern(_email, _pattern) {
+  return false;
+}
+
 export function matchesDownrank(email, downrankList) {
   const text = `${email.subject || ""} ${email.fromName || ""} ${email.from || ""} ${email.preview || ""}`.toLowerCase();
   return downrankList.some(term => text.includes(term.toLowerCase()));
@@ -220,8 +246,10 @@ export function classify(emails, accountId) {
   for (const email of emails) {
     let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
 
+    const alwaysDeleteApplies = alwaysDeleteList.some(r => senderRuleApplies(email, r));
+
     // alwaysDelete overrides category — reclassify to ignore so it doesn't appear in visible sections
-    if (matchesSender(email, alwaysDeleteList)) {
+    if (alwaysDeleteApplies) {
       categoryId = "ignore";
     }
 
@@ -231,7 +259,7 @@ export function classify(emails, accountId) {
     result.categories[categoryId].emails.push(email);
 
     // alwaysDelete — force into deletion candidates
-    if (matchesSender(email, alwaysDeleteList)) {
+    if (alwaysDeleteApplies) {
       result.deletionCandidates.push(email);
     }
     // neverDelete overrides category — never add to deletion candidates
