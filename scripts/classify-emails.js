@@ -75,6 +75,8 @@ export function matchesSender(email, senders) {
  *
  * Used for alwaysDelete entries to support conditional senders like:
  *   { type: "name", value: "eBay", unless: { subjectContains: ["delivered", "order"] } }
+ *
+ * Note: only email.subject is tested — preview is intentionally excluded.
  */
 export function senderRuleApplies(email, rule) {
   if (!matchesSender(email, [rule])) return false;

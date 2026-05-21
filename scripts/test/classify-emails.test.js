@@ -11,6 +11,7 @@ import {
   detectBulkSignals,
   senderRuleApplies,
   matchesScamPattern,
+  matchesDeletionPattern,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -365,7 +366,7 @@ function classifyWithAccount(emails, account, typeConfig) {
       result.deletionCandidates.push(email);
     } else if (matchesSender(email, neverDeleteList)) {
       // protected
-    } else if (deletionCategoryIds.has(categoryId)) {
+    } else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns || [])) {
       result.deletionCandidates.push(email);
     }
   }
