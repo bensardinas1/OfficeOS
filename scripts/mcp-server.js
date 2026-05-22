@@ -164,17 +164,18 @@ const TOOLS = [
   {
     name: "delete_gmail_emails",
     description:
-      "Move Gmail emails to Trash (soft delete, recoverable for 30 days). Provide list of Gmail message IDs.",
+      "Move Gmail emails to Trash (soft delete, recoverable for 30 days). Requires accountId so the script can verify it's operating on the correct mailbox.",
     inputSchema: {
       type: "object",
       properties: {
+        accountId: { type: "string", description: "Account ID from companies.json" },
         messageIds: {
           type: "array",
           description: "Array of Gmail message IDs to trash",
           items: { type: "string" },
         },
       },
-      required: ["messageIds"],
+      required: ["accountId", "messageIds"],
     },
   },
   {
@@ -284,8 +285,8 @@ async function handleToolCall(name, args) {
     }
 
     case "delete_gmail_emails": {
-      const { messageIds } = args;
-      const result = await runScript("delete-gmail-emails.js", messageIds);
+      const { accountId, messageIds } = args;
+      const result = await runScript("delete-gmail-emails.js", [accountId, ...messageIds]);
       if (result.code !== 0) return errorResult(result.stderr || "Failed to delete Gmail emails");
       return textResult(result.stdout);
     }

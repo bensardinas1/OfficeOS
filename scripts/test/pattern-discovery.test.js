@@ -165,6 +165,32 @@ describe("discoverMemoryBackfill", () => {
     const equinoxProposal = proposals.find(p => JSON.stringify(p.payload).toLowerCase().includes("equinox"));
     assert.equal(equinoxProposal, undefined);
   });
+
+  it("routes memory backfill to the account whose memoryKeywords match", () => {
+    writeFileSync(join(memoryDir, "feedback_acme.md"),
+      "noreply@acme.example.com — Acme Corp client emails are keeps.\n"
+    );
+    const accounts = [
+      { id: "personal", accountType: "personal", neverDelete: [], memoryKeywords: [] },
+      { id: "acmebusiness", accountType: "business", neverDelete: [], memoryKeywords: ["acme corp", "acme client"] }
+    ];
+    const proposals = discoverMemoryBackfill(memoryDir, accounts, [], { now: "2026-05-21T06:00:00Z" });
+    const acmeProposal = proposals.find(p => p.target.includes("acmebusiness"));
+    assert.ok(acmeProposal, "should route to acmebusiness based on memoryKeywords");
+  });
+
+  it("falls back to first personal account when no keywords match", () => {
+    writeFileSync(join(memoryDir, "feedback_mystery.md"),
+      "noreply@mystery.com — no keywords here.\n"
+    );
+    const accounts = [
+      { id: "bp", accountType: "business", neverDelete: [], memoryKeywords: ["payments"] },
+      { id: "personal", accountType: "personal", neverDelete: [], memoryKeywords: [] }
+    ];
+    const proposals = discoverMemoryBackfill(memoryDir, accounts, [], { now: "2026-05-21T06:00:00Z" });
+    const fallback = proposals.find(p => p.target.includes("personal"));
+    assert.ok(fallback, "should fall back to the personal account");
+  });
 });
 
 describe("proposal counter does not collide when same snapshot is passed twice", () => {

@@ -248,13 +248,22 @@ export function discoverMemoryBackfill(memoryDir, accounts, pendingProposals, { 
     );
     if (alreadyCovered) continue;
 
-    // Default to personal account if no signal; this is a hint, user can change on approval.
-    // TODO(v2): move keyword→account routing into config/companies.json
-    // (e.g., per-account `memoryKeywords` array) so adding/renaming an account
-    // doesn't require code changes. See CLAUDE.md Golden Rule.
-    const targetAccount = body.toLowerCase().includes("healthcare m&a") || body.toLowerCase().includes("hcma")
-      ? "healthcarema"
-      : "personal";
+    // Route to the account whose memoryKeywords match the file body.
+    // Falls back to the first personal-type account, or the first account
+    // overall if no personal account exists.
+    const bodyLower = body.toLowerCase();
+    let targetAccount = null;
+    for (const acct of accounts) {
+      const keywords = acct.memoryKeywords || [];
+      if (keywords.some(kw => bodyLower.includes(kw.toLowerCase()))) {
+        targetAccount = acct.id;
+        break;
+      }
+    }
+    if (!targetAccount) {
+      const personalAcct = accounts.find(a => a.accountType === "personal");
+      targetAccount = personalAcct ? personalAcct.id : (accounts[0] ? accounts[0].id : "personal");
+    }
     const target = `companies.${targetAccount}.neverDelete`;
     if (isPendingProposal(pendingProposals, target, value)) continue;
 

@@ -81,6 +81,26 @@ Inside each of the three account objects, after `neverDelete` and before `output
 
 (This pattern can also be auto-proposed by Task 5's `discoverScamPatterns` after 3+ deletions across 2+ domains in 30 days — skip step 5 if you'd rather wait for the system to suggest it.)
 
+## 6. Add `actionable: true` to actionable categories in `account-types.json`
+
+The orchestrator now reads `actionable` from category definitions. Add the flag to your actionable categories:
+
+In `account-types.json`:
+- Under `business.triageCategories`: add `"actionable": true` to the `action` category.
+- Under `personal.triageCategories`: add `"actionable": true` to the `respond` category.
+
+If you don't apply this migration, the script falls back to the legacy hardcoded IDs `action` and `respond` — your existing setup will still work, but new categories you add won't be recognized as actionable until they have the flag.
+
+## 7. Optional: add `memoryKeywords` to each account in `companies.json`
+
+For multi-account memory routing during backfill discovery. Each account can declare keyword phrases that, if found in a memory file body, route the resulting proposal to that account. Example:
+
+```json
+"memoryKeywords": ["healthcare m&a", "hcma"]
+```
+
+If omitted or no keyword matches, proposals route to the first personal-type account. This is a quality-of-life setting; you can also fix the target by hand when reviewing proposals.
+
 ## Validation
 
 After applying changes, verify the JSON parses:

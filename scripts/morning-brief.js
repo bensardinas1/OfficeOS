@@ -76,14 +76,21 @@ function priorityRank(item, account) {
 }
 
 function actionableCategoryIds(typeConfig) {
-  // TODO(v2): drive this from a per-category `actionable: true` flag in
-  // config/account-types.json rather than hardcoding category IDs.
-  // See CLAUDE.md Golden Rule. For v1, the two actionable categories
-  // are "action" (business) and "respond" (personal); no other config
-  // currently defines actionable categories.
+  // Categories are marked actionable via `actionable: true` in
+  // config/account-types.json. Fallback to the legacy ids "action" and
+  // "respond" if no category sets the flag (back-compat for older configs).
   const ids = new Set();
+  let anyFlagged = false;
   for (const cat of typeConfig.triageCategories) {
-    if (cat.id === "action" || cat.id === "respond") ids.add(cat.id);
+    if (cat.actionable) {
+      ids.add(cat.id);
+      anyFlagged = true;
+    }
+  }
+  if (!anyFlagged) {
+    for (const cat of typeConfig.triageCategories) {
+      if (cat.id === "action" || cat.id === "respond") ids.add(cat.id);
+    }
   }
   return ids;
 }
@@ -119,11 +126,34 @@ function loadProposals(path) {
   }
 }
 
+function loadDraftsIndex(path) {
+  if (!path || !existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
 export async function runMorningBrief({ flags, deps }) {
   const { paths, accounts, typeConfigs, fetchFn, classifyFn, deleteFn, clock } = deps;
   const now = clock.now;
   const dryRun = !!flags.dryRun;
   const draftOnly = !!flags.draftOnly;
+
+  // First-run safety: if no last-run state exists and the user did not
+  // explicitly request a live first run, force dry-run and warn. Skill
+  // prompts and cron jobs both go through this path.
+  const noLastRun = !existsSync(paths.lastRunStatePath);
+  let effectiveDryRun = dryRun;
+  const firstRunWarnings = [];
+  if (noLastRun && !dryRun && !flags.firstRunLive) {
+    effectiveDryRun = true;
+    firstRunWarnings.push(
+      "First run detected (no data/last-run-state.json). Forced --dry-run for safety. " +
+      "Review the brief; re-invoke with --first-run-live to actually delete/save state."
+    );
+  }
 
   const lastRunState = existsSync(paths.lastRunStatePath)
     ? JSON.parse(readFileSync(paths.lastRunStatePath, "utf-8"))
@@ -132,13 +162,14 @@ export async function runMorningBrief({ flags, deps }) {
 
   const history = loadHistory(paths.senderHistoryPath);
   const proposalsObj = loadProposals(paths.proposedRulesPath);
+  const draftsIndex = loadDraftsIndex(paths.draftsIndexPath || "");
 
   const summary = {};
   const needsDecisionAll = [];
   const draftCandidatesAll = [];
   const fyiCounts = {};
   const travelEmails = [];
-  const warnings = [];
+  const warnings = [...firstRunWarnings];
   const recentDeletionsForScam = [];
   const perAccountStats = {};
 
@@ -158,7 +189,7 @@ export async function runMorningBrief({ flags, deps }) {
 
     const autoDeleteIds = result.deletionCandidates.map(e => e.id);
 
-    if (!dryRun && !draftOnly && autoDeleteIds.length > 0) {
+    if (!effectiveDryRun && !draftOnly && autoDeleteIds.length > 0) {
       try {
         await deleteFn(account.id, autoDeleteIds);
         for (const e of result.deletionCandidates) {
@@ -178,7 +209,7 @@ export async function runMorningBrief({ flags, deps }) {
       }
     }
 
-    if (!dryRun) {
+    if (!effectiveDryRun) {
       // Reset consecutive-delete counters for senders whose emails were kept this run.
       // This is what makes auto-trash discovery actually "consecutive" rather than "cumulative".
       const deletedIds = new Set(autoDeleteIds);
@@ -210,7 +241,7 @@ export async function runMorningBrief({ flags, deps }) {
       .reduce((sum, [, b]) => sum + b.emails.length, 0);
 
     let tasksCaptured = 0;
-    if (!dryRun && typeConfig.taskCapture !== "manual") {
+    if (!effectiveDryRun && typeConfig.taskCapture !== "manual") {
       for (const item of actions) {
         appendTask(paths.tasksPath, item.email, account.id);
         tasksCaptured++;
@@ -218,7 +249,11 @@ export async function runMorningBrief({ flags, deps }) {
     }
 
     needsDecisionAll.push(...actions);
-    draftCandidatesAll.push(...actions.filter(a => a.draftable));
+    draftCandidatesAll.push(...actions.filter(a => {
+      if (!a.draftable) return false;
+      const key = `${account.id}:${a.email.id}`;
+      return !draftsIndex[key]; // skip if a draft was already created
+    }));
 
     perAccountStats[account.id] = {
       fetched: emails.length,
@@ -266,7 +301,7 @@ export async function runMorningBrief({ flags, deps }) {
 
   // Pattern discovery — accumulator pattern: each call sees prior outputs
   const newProposals = [];
-  if (!dryRun && !draftOnly) {
+  if (!effectiveDryRun && !draftOnly) {
     let pending = [...proposalsObj.proposals];
     const autoTrash = discoverAutoTrash(history, accounts, pending, { now });
     pending = [...pending, ...autoTrash];
@@ -308,7 +343,9 @@ export async function runMorningBrief({ flags, deps }) {
   return {
     timestamp: now,
     window,
-    dryRun,
+    dryRun: effectiveDryRun,
+    requestedDryRun: dryRun,
+    forcedFirstRunDryRun: effectiveDryRun && !dryRun,
     draftOnly,
     summary,
     needsDecision,
@@ -328,6 +365,7 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--dry-run") flags.dryRun = true;
     else if (args[i] === "--draft-only") flags.draftOnly = true;
+    else if (args[i] === "--first-run-live") flags.firstRunLive = true;
     else if (args[i] === "--since") flags.since = args[++i];
     else if (args[i] === "--window") flags.window = args[++i];
   }
@@ -372,7 +410,8 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
         proposedRulesPath: join(root, "data/proposed-rules.json"),
         tasksPath: join(root, "data/tasks.md"),
         triageLogPath: join(root, "data/triage-log.md"),
-        lastRunStatePath: join(root, "data/last-run-state.json")
+        lastRunStatePath: join(root, "data/last-run-state.json"),
+        draftsIndexPath: join(root, "data/drafts-index.json")
       },
       accounts: companies.companies,
       typeConfigs: accountTypes,

@@ -8,9 +8,10 @@
  */
 
 import { buildGmailClient } from "./gmail-client.js";
+import { verifyGmailAccount } from "./gmail-verify.js";
 
-// First positional is accountId (kept for interface parity with delete-emails.js);
-// Gmail client authenticates via stored OAuth, not per-account credentials.
+// First positional is accountId; we use it to verify the authenticated Gmail
+// session matches the configured account before mutating any messages.
 const [, , accountIdArg, ...messageIds] = process.argv;
 
 if (!accountIdArg || messageIds.length === 0) {
@@ -19,6 +20,7 @@ if (!accountIdArg || messageIds.length === 0) {
 }
 
 const gmail = await buildGmailClient();
+await verifyGmailAccount(gmail, accountIdArg);
 
 let trashed = 0;
 let failed = 0;

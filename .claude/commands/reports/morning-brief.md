@@ -83,6 +83,15 @@ echo '{"to":["<recipient>"],"subject":"Re: <subject>","body":"<draft body>","thr
 
 Parse the returned `draftId` and store it next to the email's needsDecision entry.
 
+3a. After each successful save, update `data/drafts-index.json` to record the mapping so subsequent overlapping runs don't re-draft the same email.
+
+The agent should:
+- Read `data/drafts-index.json` (or use `{}` if missing).
+- Set `index["<accountId>:<sourceMessageId>"] = { draftId, savedAt: <ISO>, preview }`.
+- Write back via the standard JSON.stringify pretty-printed format.
+
+This prevents re-drafting the same email on overlapping windows. The orchestrator already pre-filters draft candidates against the index, but the skill must keep the index updated for new drafts it creates.
+
 If the save fails, capture the error message as a warning and include the draft body inline in the brief instead.
 
 ### 4. Assemble the brief

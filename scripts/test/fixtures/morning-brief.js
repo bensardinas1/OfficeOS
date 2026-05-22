@@ -17,7 +17,7 @@ export const sampleAccounts = [
 export const sampleTypeConfig = {
   business: {
     triageCategories: [
-      { id: "action", label: "ACTION REQUIRED" },
+      { id: "action", label: "ACTION REQUIRED", actionable: true },
       { id: "fyi", label: "FYI" },
       { id: "ignore", label: "IGNORE", hidden: true }
     ],
@@ -27,7 +27,7 @@ export const sampleTypeConfig = {
   },
   personal: {
     triageCategories: [
-      { id: "respond", label: "RESPOND" },
+      { id: "respond", label: "RESPOND", actionable: true },
       { id: "newsletters", label: "NEWSLETTERS" },
       { id: "shopping", label: "SHOPPING" },
       { id: "ignore", label: "IGNORE", hidden: true }

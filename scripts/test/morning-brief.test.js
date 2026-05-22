@@ -55,6 +55,9 @@ describe("runMorningBrief — orchestration", () => {
     mkdirSync(memoryDir, { recursive: true });
     mkdirSync(configDir, { recursive: true });
     fetched = []; classified = []; deleted = [];
+    // Pre-create last-run-state so the first-run guard doesn't force dry-run for tests
+    // that explicitly test live behavior. Individual first-run tests delete it.
+    writeFileSync(join(dataDir, "last-run-state.json"), JSON.stringify({ lastRunAt: "2026-05-20T06:00:00Z" }));
   });
   afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
 
@@ -67,7 +70,8 @@ describe("runMorningBrief — orchestration", () => {
         proposedRulesPath: join(dataDir, "proposed-rules.json"),
         tasksPath: join(dataDir, "tasks.md"),
         triageLogPath: join(dataDir, "triage-log.md"),
-        lastRunStatePath: join(dataDir, "last-run-state.json")
+        lastRunStatePath: join(dataDir, "last-run-state.json"),
+        draftsIndexPath: join(dataDir, "drafts-index.json")
       },
       accounts: sampleAccounts,
       typeConfigs: sampleTypeConfig,
@@ -167,6 +171,10 @@ describe("runMorningBrief — orchestration", () => {
 
   it("does NOT write any state in dry-run mode", async () => {
     const deps = buildDeps();
+    // Remove the pre-seeded last-run-state so we can assert that dry-run
+    // does NOT create it. We pass --first-run-live=false implicitly via dryRun:true.
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(join(dataDir, "last-run-state.json"));
     await runMorningBrief({ flags: { window: "24h", dryRun: true }, deps });
     assert.equal(existsSync(join(dataDir, "sender-history.json")), false);
     assert.equal(existsSync(join(dataDir, "last-run-state.json")), false);
@@ -274,5 +282,102 @@ describe("runMorningBrief — orchestration", () => {
     assert.ok(result.window.catchUp);
     const partnerItem = result.needsDecision.find(i => i.email.id === "p1");
     assert.ok(partnerItem, "partner-account priority item should be in needsDecision, not deferred");
+  });
+
+  it("forces dry-run on first run when last-run-state is missing", async () => {
+    const deps = buildDeps();
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(deps.paths.lastRunStatePath);  // simulate first run
+    const result = await runMorningBrief({ flags: { window: "24h" }, deps });
+    assert.equal(result.dryRun, true, "should be forced to dry-run");
+    assert.equal(result.forcedFirstRunDryRun, true);
+    assert.equal(deleted.length, 0);
+    assert.ok(result.warnings.some(w => /first run/i.test(w)));
+  });
+
+  it("does not force dry-run when --first-run-live is set", async () => {
+    const deps = buildDeps();
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(deps.paths.lastRunStatePath);  // simulate first run
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true }, deps });
+    assert.equal(result.dryRun, false);
+    assert.equal(result.forcedFirstRunDryRun, false);
+    // may or may not have deletions, but live path runs
+  });
+
+  it("does not force dry-run when last-run-state already exists", async () => {
+    const deps = buildDeps();
+    // beforeEach already pre-created last-run-state, so this should NOT trigger first-run guard.
+    const result = await runMorningBrief({ flags: { window: "24h" }, deps });
+    assert.equal(result.dryRun, false);
+    assert.equal(result.forcedFirstRunDryRun, false);
+  });
+
+  it("filters draft candidates whose source message is already in drafts-index", async () => {
+    const deps = buildDeps();
+    // Pre-populate drafts-index with an entry for msg m3 (the URGENT one)
+    writeFileSync(deps.paths.draftsIndexPath, JSON.stringify({
+      "personal:m3": { draftId: "abc-123", savedAt: "2026-05-20T00:00:00Z", preview: "Stub draft" }
+    }));
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true }, deps });
+    // m3 still in needsDecision but not in draftCandidates
+    assert.ok(result.needsDecision.find(i => i.email.id === "m3"), "m3 should still need decision");
+    assert.equal(result.draftCandidates.find(i => i.email.id === "m3"), undefined, "m3 should NOT be a draft candidate");
+  });
+});
+
+describe("actionableCategoryIds fallback", () => {
+  let tmpDir, dataDir, memoryDir;
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "morning-brief-fallback-"));
+    dataDir = join(tmpDir, "data");
+    memoryDir = join(tmpDir, "memory");
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(memoryDir, { recursive: true });
+    writeFileSync(join(dataDir, "last-run-state.json"), JSON.stringify({ lastRunAt: "2026-05-20T06:00:00Z" }));
+  });
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it("falls back to action/respond when no category has actionable flag", async () => {
+    const oldTypeConfigs = {
+      personal: {
+        triageCategories: [
+          { id: "respond", label: "RESPOND" },  // no actionable flag
+          { id: "fyi", label: "FYI" },
+          { id: "ignore", label: "IGNORE", hidden: true }
+        ],
+        downrankDefaults: [],
+        bulkSignalThreshold: 1,
+        deletionPolicy: { categories: ["ignore"], patterns: [], neverDelete: [], alwaysDelete: [] }
+      }
+    };
+    const deps = {
+      paths: {
+        dataDir,
+        memoryDir,
+        senderHistoryPath: join(dataDir, "sender-history.json"),
+        proposedRulesPath: join(dataDir, "proposed-rules.json"),
+        tasksPath: join(dataDir, "tasks.md"),
+        triageLogPath: join(dataDir, "triage-log.md"),
+        lastRunStatePath: join(dataDir, "last-run-state.json"),
+        draftsIndexPath: join(dataDir, "drafts-index.json")
+      },
+      accounts: [{
+        id: "personal", name: "Personal", accountType: "personal", provider: "gmail",
+        myEmail: "p@x.com", prioritySenders: [], neverDelete: [], alwaysDelete: [],
+        scamPatterns: [], urgencyRules: { flags: [] }, downrank: []
+      }],
+      typeConfigs: oldTypeConfigs,
+      classifyFn: (emails, account, typeConfig) => {
+        const result = { categories: { respond: { label: "RESPOND", emails: [] }, fyi: { label: "FYI", emails: [] }, ignore: { label: "IGNORE", emails: [] } }, deletionCandidates: [] };
+        for (const e of emails) result.categories.respond.emails.push(e);
+        return result;
+      },
+      fetchFn: async () => [{ id: "x1", from: "a@b.com", fromName: "A", subject: "Hi", hasListUnsubscribe: false, receivedAt: "2026-05-21T05:00:00Z" }],
+      deleteFn: async () => ({ trashed: 0, failed: 0 }),
+      clock: { now: "2026-05-21T06:00:00Z" }
+    };
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true }, deps });
+    assert.ok(result.needsDecision.length > 0, "respond emails should be in needsDecision even without actionable flag (back-compat)");
   });
 });

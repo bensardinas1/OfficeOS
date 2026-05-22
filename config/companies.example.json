@@ -18,6 +18,7 @@
         { "type": "domain", "value": "companya.com", "label": "Internal staff" },
         { "type": "name", "value": "Jane Smith", "label": "CFO" }
       ],
+      "memoryKeywords": ["company a", "ca-corp"],
       "urgencyRules": {
         "currentRule": "Description of what counts as urgent",
         "flags": ["urgent", "deadline", "request", "please review"]
@@ -52,6 +53,7 @@
       "prioritySenders": [
         { "type": "domain", "value": "companyb.com", "label": "Internal staff" }
       ],
+      "memoryKeywords": ["company b", "cb-corp"],
       "urgencyRules": {
         "currentRule": "Description of what counts as urgent",
         "flags": ["client", "proposal", "contract", "closing"]
@@ -75,6 +77,7 @@
       "purpose": "Manage personal life admin, hobbies, and volunteer commitments efficiently",
       "keyContacts": [],
       "prioritySenders": [],
+      "memoryKeywords": [],
       "urgencyRules": { "flags": [] },
       "downrank": [],
       "alwaysDelete": [

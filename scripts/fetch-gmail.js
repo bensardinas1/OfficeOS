@@ -15,6 +15,7 @@
  */
 
 import { buildGmailClient } from "./gmail-client.js";
+import { verifyGmailAccount } from "./gmail-verify.js";
 import "dotenv/config";
 
 const accountId = process.argv[2] || "personal";
@@ -25,6 +26,7 @@ const sinceUnixSec = Math.floor(Date.now() / 1000) - hours * 3600;
 
 try {
   const gmail = await buildGmailClient();
+  await verifyGmailAccount(gmail, accountId);
 
   // List message IDs in inbox newer than `sinceUnixSec`.
   const listRes = await gmail.users.messages.list({
