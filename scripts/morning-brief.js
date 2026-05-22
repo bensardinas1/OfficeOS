@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { atomicWrite } from "./fs-utils.js";
-import { loadHistory, saveHistory, recordDeletion } from "./sender-history.js";
+import { loadHistory, saveHistory, recordDeletion, recordKeep } from "./sender-history.js";
 import { discoverAutoTrash, discoverScamPatterns, discoverMemoryBackfill } from "./pattern-discovery.js";
 
 const CATCH_UP_THRESHOLD_HOURS = 72;
@@ -123,6 +123,7 @@ export async function runMorningBrief({ flags, deps }) {
   const { paths, accounts, typeConfigs, fetchFn, classifyFn, deleteFn, clock } = deps;
   const now = clock.now;
   const dryRun = !!flags.dryRun;
+  const draftOnly = !!flags.draftOnly;
 
   const lastRunState = existsSync(paths.lastRunStatePath)
     ? JSON.parse(readFileSync(paths.lastRunStatePath, "utf-8"))
@@ -157,7 +158,7 @@ export async function runMorningBrief({ flags, deps }) {
 
     const autoDeleteIds = result.deletionCandidates.map(e => e.id);
 
-    if (!dryRun && autoDeleteIds.length > 0) {
+    if (!dryRun && !draftOnly && autoDeleteIds.length > 0) {
       try {
         await deleteFn(account.id, autoDeleteIds);
         for (const e of result.deletionCandidates) {
@@ -174,6 +175,19 @@ export async function runMorningBrief({ flags, deps }) {
         }
       } catch (err) {
         warnings.push(`[${account.id}] delete batch failed: ${err.message}`);
+      }
+    }
+
+    if (!dryRun) {
+      // Reset consecutive-delete counters for senders whose emails were kept this run.
+      // This is what makes auto-trash discovery actually "consecutive" rather than "cumulative".
+      const deletedIds = new Set(autoDeleteIds);
+      for (const [catId, bucket] of Object.entries(result.categories)) {
+        if (catId === "ignore") continue;
+        for (const e of bucket.emails) {
+          if (deletedIds.has(e.id)) continue;
+          if (e.from) recordKeep(history, account.id, e.from);
+        }
       }
     }
 
@@ -196,7 +210,7 @@ export async function runMorningBrief({ flags, deps }) {
       .reduce((sum, [, b]) => sum + b.emails.length, 0);
 
     let tasksCaptured = 0;
-    if (!dryRun) {
+    if (!dryRun && typeConfig.taskCapture !== "manual") {
       for (const item of actions) {
         appendTask(paths.tasksPath, item.email, account.id);
         tasksCaptured++;
@@ -221,7 +235,9 @@ export async function runMorningBrief({ flags, deps }) {
       fyi: fyiCounts[account.id]
     };
 
-    for (const bucket of Object.values(result.categories)) {
+    // Travel scan excludes the ignore bucket (those emails were auto-deleted this run).
+    for (const [catId, bucket] of Object.entries(result.categories)) {
+      if (catId === "ignore") continue;
       for (const e of bucket.emails) {
         const text = `${e.subject || ""} ${e.preview || ""}`.toLowerCase();
         if (/\b(itinerary|booking|reservation|boarding|hotel|flight|rail|train|öbb|car rental|avis|noleggiare)\b/.test(text)) {
@@ -250,7 +266,7 @@ export async function runMorningBrief({ flags, deps }) {
 
   // Pattern discovery — accumulator pattern: each call sees prior outputs
   const newProposals = [];
-  if (!dryRun) {
+  if (!dryRun && !draftOnly) {
     let pending = [...proposalsObj.proposals];
     const autoTrash = discoverAutoTrash(history, accounts, pending, { now });
     pending = [...pending, ...autoTrash];
@@ -260,6 +276,21 @@ export async function runMorningBrief({ flags, deps }) {
       ? discoverMemoryBackfill(paths.memoryDir, accounts, pending, { now })
       : [];
     newProposals.push(...autoTrash, ...scam, ...backfill);
+
+    // Backfill proposalsAdded per account so the brief's summary and the
+    // triage-log capture per-account proposal counts. Target shape is
+    // "companies.<accountId>.<field>".
+    for (const p of newProposals) {
+      const m = p.target.match(/^companies\.([^.]+)\./);
+      const acctId = m ? m[1] : null;
+      if (acctId && perAccountStats[acctId]) {
+        perAccountStats[acctId].proposalsAdded = (perAccountStats[acctId].proposalsAdded || 0) + 1;
+      }
+      if (acctId && summary[acctId]) {
+        summary[acctId].proposalsAdded = (summary[acctId].proposalsAdded || 0) + 1;
+      }
+    }
+
     proposalsObj.proposals.push(...newProposals);
 
     // Persist state
@@ -278,6 +309,7 @@ export async function runMorningBrief({ flags, deps }) {
     timestamp: now,
     window,
     dryRun,
+    draftOnly,
     summary,
     needsDecision,
     deferred,
@@ -295,6 +327,7 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
   const flags = {};
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--dry-run") flags.dryRun = true;
+    else if (args[i] === "--draft-only") flags.draftOnly = true;
     else if (args[i] === "--since") flags.since = args[++i];
     else if (args[i] === "--window") flags.window = args[++i];
   }

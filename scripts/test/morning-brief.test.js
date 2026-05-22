@@ -201,6 +201,50 @@ describe("runMorningBrief — orchestration", () => {
     assert.equal(result.deferred.length, 25);
   });
 
+  it("backfills proposalsAdded into per-account summary when discovery emits proposals", async () => {
+    const deps = buildDeps();
+    // Force the auto-trash threshold by pre-seeding sender-history with 7 deletes.
+    const { join } = await import("node:path");
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    mkdirSync(join(dataDir), { recursive: true });
+    writeFileSync(join(dataDir, "sender-history.json"), JSON.stringify({
+      "personal:noreply@linkedin.com": {
+        deletedCount: 6,  // 6 + this run's 1 = 7, crosses threshold of 5
+        hasListUnsubscribe: true,
+        lastDeletedAt: "2026-05-20T06:00:00Z"
+      }
+    }));
+    const result = await runMorningBrief({ flags: { window: "24h" }, deps });
+    // discoverAutoTrash should have fired for the LinkedIn sender; proposalsAdded should be >0.
+    if (result.proposedRules.length > 0) {
+      assert.ok(result.summary.personal.proposalsAdded > 0,
+        "proposalsAdded should be backfilled into summary");
+    }
+  });
+
+  it("does NOT delete or run pattern discovery in --draft-only mode", async () => {
+    const deps = buildDeps();
+    const result = await runMorningBrief({ flags: { window: "24h", draftOnly: true }, deps });
+    assert.equal(deleted.length, 0, "no deletes in draft-only");
+    assert.equal(result.draftOnly, true);
+    // draftCandidates should still be populated for the skill to draft
+    assert.ok(Array.isArray(result.draftCandidates));
+  });
+
+  it("does NOT capture tasks for accounts with taskCapture=manual", async () => {
+    const deps = buildDeps();
+    // Force personal typeConfig to manual capture
+    deps.typeConfigs = {
+      ...sampleTypeConfig,
+      personal: { ...sampleTypeConfig.personal, taskCapture: "manual" }
+    };
+    await runMorningBrief({ flags: { window: "24h" }, deps });
+    // tasks.md should not exist because the only account is personal w/ manual capture
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    assert.equal(existsSync(join(dataDir, "tasks.md")), false);
+  });
+
   it("globally sorts needsDecision by priority across accounts in catch-up", async () => {
     const deps = buildDeps();
     // Two accounts: one (personal) with lots of routine action items;

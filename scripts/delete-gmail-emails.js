@@ -9,10 +9,12 @@
 
 import { buildGmailClient } from "./gmail-client.js";
 
-const messageIds = process.argv.slice(2);
+// First positional is accountId (kept for interface parity with delete-emails.js);
+// Gmail client authenticates via stored OAuth, not per-account credentials.
+const [, , accountIdArg, ...messageIds] = process.argv;
 
-if (messageIds.length === 0) {
-  console.error("Usage: node scripts/delete-gmail-emails.js <messageId1> [messageId2 ...]");
+if (!accountIdArg || messageIds.length === 0) {
+  console.error("Usage: node scripts/delete-gmail-emails.js <accountId> <messageId1> [messageId2 ...]");
   process.exit(1);
 }
 
