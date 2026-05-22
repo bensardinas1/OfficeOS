@@ -11,8 +11,9 @@
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { atomicWrite } from "./fs-utils.js";
 import { loadHistory, saveHistory, recordDeletion } from "./sender-history.js";
 import { discoverAutoTrash, discoverScamPatterns, discoverMemoryBackfill } from "./pattern-discovery.js";
@@ -33,8 +34,9 @@ export function determineWindow(flags, { now, lastRun }) {
   }
   if (flags.window) {
     const match = flags.window.match(/^(\d+)(h|d)$/i);
-    if (!match) throw new Error(`Invalid --window: ${flags.window}`);
+    if (!match) throw new Error(`Invalid --window: ${flags.window} (expected form like "24h" or "14d")`);
     const hours = Number(match[1]) * (match[2].toLowerCase() === "d" ? 24 : 1);
+    if (hours === 0) throw new Error(`--window "${flags.window}" produces an empty range; minimum is 1h`);
     const since = new Date(new Date(now).getTime() - hours * 3600000).toISOString();
     return { since, windowHours: hours, catchUp: hours > CATCH_UP_THRESHOLD_HOURS };
   }
@@ -74,6 +76,11 @@ function priorityRank(item, account) {
 }
 
 function actionableCategoryIds(typeConfig) {
+  // TODO(v2): drive this from a per-category `actionable: true` flag in
+  // config/account-types.json rather than hardcoding category IDs.
+  // See CLAUDE.md Golden Rule. For v1, the two actionable categories
+  // are "action" (business) and "respond" (personal); no other config
+  // currently defines actionable categories.
   const ids = new Set();
   for (const cat of typeConfig.triageCategories) {
     if (cat.id === "action" || cat.id === "respond") ids.add(cat.id);
@@ -224,14 +231,21 @@ export async function runMorningBrief({ flags, deps }) {
     }
   }
 
-  // Catch-up caps
+  // Catch-up caps — globally sort by priorityRank before slicing so
+  // high-priority items from low-volume accounts aren't displaced by
+  // routine items from high-volume accounts.
   let needsDecision = needsDecisionAll;
   let deferred = [];
   let draftCandidates = draftCandidatesAll;
   if (window.catchUp) {
-    needsDecision = needsDecisionAll.slice(0, CATCH_UP_DECISION_CAP);
-    deferred = needsDecisionAll.slice(CATCH_UP_DECISION_CAP);
-    draftCandidates = draftCandidatesAll.slice(0, CATCH_UP_DRAFT_CAP);
+    const accountsById = new Map(accounts.map(a => [a.id, a]));
+    const globalSort = (a, b) =>
+      priorityRank(b, accountsById.get(b.accountId) || {}) -
+      priorityRank(a, accountsById.get(a.accountId) || {});
+    const sortedAll = [...needsDecisionAll].sort(globalSort);
+    needsDecision = sortedAll.slice(0, CATCH_UP_DECISION_CAP);
+    deferred = sortedAll.slice(CATCH_UP_DECISION_CAP);
+    draftCandidates = [...draftCandidatesAll].sort(globalSort).slice(0, CATCH_UP_DRAFT_CAP);
   }
 
   // Pattern discovery — accumulator pattern: each call sees prior outputs
@@ -284,19 +298,17 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
     else if (args[i] === "--since") flags.since = args[++i];
     else if (args[i] === "--window") flags.window = args[++i];
   }
-  const { spawnSync } = await import("node:child_process");
-  const path = await import("node:path");
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const root = path.join(__dirname, "..");
-  const companies = JSON.parse(readFileSync(path.join(root, "config/companies.json"), "utf-8"));
-  const accountTypes = JSON.parse(readFileSync(path.join(root, "config/account-types.json"), "utf-8"));
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const root = join(__dirname, "..");
+  const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
+  const accountTypes = JSON.parse(readFileSync(join(root, "config/account-types.json"), "utf-8"));
   const { classify } = await import("./classify-emails.js");
 
   function fetchSubprocess(accountId, sinceIso) {
     const account = companies.companies.find(c => c.id === accountId);
     const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
     const hours = Math.ceil((Date.now() - new Date(sinceIso).getTime()) / 3600000);
-    const child = spawnSync("node", [path.join(root, "scripts", script), accountId, String(hours), "inbox"], {
+    const child = spawnSync("node", [join(root, "scripts", script), accountId, String(hours), "inbox"], {
       encoding: "utf-8", maxBuffer: 50 * 1024 * 1024
     });
     if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}`);
@@ -306,27 +318,33 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
     if (ids.length === 0) return { trashed: 0, failed: 0 };
     const account = companies.companies.find(c => c.id === accountId);
     const script = account.provider === "gmail" ? "delete-gmail-emails.js" : "delete-emails.js";
-    const child = spawnSync("node", [path.join(root, "scripts", script), accountId, ...ids], { encoding: "utf-8" });
+    const child = spawnSync("node", [join(root, "scripts", script), accountId, ...ids], { encoding: "utf-8" });
     if (child.status !== 0) throw new Error(child.stderr || `delete failed for ${accountId}`);
     return { trashed: ids.length, failed: 0 };
   }
 
+  // NOTE: The CLI classifyFn adapter ignores the `account` and `typeConfig`
+  // parameters because classify(emails, accountId) loads its own config.
+  // The injected typeConfigs are populated for the test contract; the CLI
+  // path uses the on-disk config directly. This double-load is intentional
+  // — keeping the test surface and CLI surface in sync would require
+  // exposing a classifyWithContext export; deferred to v2.
   const result = await runMorningBrief({
     flags,
     deps: {
       paths: {
-        dataDir: path.join(root, "data"),
-        memoryDir: path.join(root, "memory"),
-        senderHistoryPath: path.join(root, "data/sender-history.json"),
-        proposedRulesPath: path.join(root, "data/proposed-rules.json"),
-        tasksPath: path.join(root, "data/tasks.md"),
-        triageLogPath: path.join(root, "data/triage-log.md"),
-        lastRunStatePath: path.join(root, "data/last-run-state.json")
+        dataDir: join(root, "data"),
+        memoryDir: join(root, "memory"),
+        senderHistoryPath: join(root, "data/sender-history.json"),
+        proposedRulesPath: join(root, "data/proposed-rules.json"),
+        tasksPath: join(root, "data/tasks.md"),
+        triageLogPath: join(root, "data/triage-log.md"),
+        lastRunStatePath: join(root, "data/last-run-state.json")
       },
       accounts: companies.companies,
       typeConfigs: accountTypes,
       fetchFn: async (accountId, sinceIso) => fetchSubprocess(accountId, sinceIso),
-      classifyFn: (emails, account, typeConfig) => classify(emails, account.id),
+      classifyFn: (emails, account) => classify(emails, account.id),
       deleteFn: async (accountId, ids) => deleteSubprocess(accountId, ids),
       clock: { now: new Date().toISOString() }
     }

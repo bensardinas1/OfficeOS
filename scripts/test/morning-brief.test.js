@@ -25,6 +25,12 @@ describe("determineWindow", () => {
     const w = determineWindow({}, { now: "2026-05-21T06:00:00Z", lastRun: null });
     assert.equal(w.windowHours, 24);
   });
+  it("throws on zero-hour window", () => {
+    assert.throws(() => determineWindow({ window: "0h" }, { now: "2026-05-21T00:00:00Z", lastRun: null }), /empty range/i);
+  });
+  it("throws with a hint on unrecognized unit", () => {
+    assert.throws(() => determineWindow({ window: "3w" }, { now: "2026-05-21T00:00:00Z", lastRun: null }), /expected form/i);
+  });
 });
 
 describe("isCatchUp", () => {
@@ -193,5 +199,36 @@ describe("runMorningBrief — orchestration", () => {
     const result = await runMorningBrief({ flags: { since: "2026-05-01T00:00:00Z" }, deps });
     assert.equal(result.needsDecision.length, 25);
     assert.equal(result.deferred.length, 25);
+  });
+
+  it("globally sorts needsDecision by priority across accounts in catch-up", async () => {
+    const deps = buildDeps();
+    // Two accounts: one (personal) with lots of routine action items;
+    // we'll inject a priority-sender match on a different "external" account
+    // to verify it lands in the top 25 even though it's account-2.
+    deps.accounts = [
+      { id: "high-volume", accountType: "personal", provider: "gmail", myEmail: "v@x.com",
+        prioritySenders: [], neverDelete: [], alwaysDelete: [], scamPatterns: [],
+        urgencyRules: { flags: [] }, downrank: [] },
+      { id: "partner-account", accountType: "personal", provider: "gmail", myEmail: "p@x.com",
+        prioritySenders: [{ type: "name", value: "George Gabela", label: "partner" }],
+        neverDelete: [], alwaysDelete: [], scamPatterns: [],
+        urgencyRules: { flags: [] }, downrank: [] }
+    ];
+    deps.fetchFn = async (accountId) => {
+      if (accountId === "high-volume") {
+        return Array.from({ length: 30 }, (_, i) => ({
+          id: `hv${i}`, from: "noise@x.com", fromName: "Noise",
+          subject: `URGENT routine ${i}`, hasListUnsubscribe: false,
+          receivedAt: "2026-05-21T05:00:00Z"
+        }));
+      }
+      return [{ id: "p1", from: "george@hcma.com", fromName: "George Gabela",
+        subject: "URGENT review LOI", hasListUnsubscribe: false, receivedAt: "2026-05-21T05:00:00Z" }];
+    };
+    const result = await runMorningBrief({ flags: { since: "2026-05-01T00:00:00Z" }, deps });
+    assert.ok(result.window.catchUp);
+    const partnerItem = result.needsDecision.find(i => i.email.id === "p1");
+    assert.ok(partnerItem, "partner-account priority item should be in needsDecision, not deferred");
   });
 });
