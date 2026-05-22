@@ -314,6 +314,11 @@ Used after any non-trivial config edit until trust is re-established.
 5. **Config writes are atomic.** Approving a rule proposal writes to a temp file and renames; never partial writes.
 6. **One run at a time per account.** A run lock (`data/.lock-<account>`) prevents two scheduled runs colliding. Stale locks (>1h old) are broken.
 7. **First-run safeguard.** If the skill has never been run before (no `data/last-run-state.json`), default to `--dry-run` and emit a banner in the brief saying "First real run — re-invoke without `--dry-run` after reviewing this dry brief."
+8. **Soft-delete only — no permanent deletion, ever.** Every delete path must move messages to the provider's recoverable trash:
+   - Outlook: `POST /me/messages/{id}/move` with `destinationId: "deleteditems"`. Never use `DELETE /me/messages/{id}`.
+   - Gmail: `users.messages.trash({ userId: "me", id })`. Never use `users.messages.delete({...})` or `users.messages.batchDelete({...})`.
+
+   This includes future connectors. The system cannot bypass the user's mail-client trash step. Emptying Deleted Items / Trash is the user's manual action in the mail client; the agent has no code path that can do it.
 
 ## Testing approach
 

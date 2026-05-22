@@ -57,6 +57,14 @@ Meta-skills that coordinate across multiple companies or multiple skills.
 - Personal accounts apply noise filters (`signals_keep` / `signals_reject`) to separate transactional from promotional email
 - Draft emails matching the sender's tone and account voice
 
+### Email Deletion Safety (non-negotiable)
+- **Soft-delete only.** Every delete path must move messages to the provider's recoverable trash, never permanently delete.
+  - Outlook: `POST /me/messages/{id}/move` with `destinationId: "deleteditems"`. Never `DELETE /me/messages/{id}`.
+  - Gmail: `users.messages.trash`. Never `users.messages.delete` or `users.messages.batchDelete`.
+- This applies to all current and future connectors, skills, orchestrators, and MCP tools.
+- The system cannot bypass the user's mail-client trash step. Emptying Deleted Items / Trash is the user's manual action in the mail client; no code path may do it.
+- **Never auto-send.** No code path may call a send-email API. Drafts only — sending is always the user's action in their mail client.
+
 ### Task Tracking
 - Tasks are stored in `data/tasks.md` (gitignored, local only)
 - Priority levels: P1 (today/blocking), P2 (this week), P3 (backlog)
