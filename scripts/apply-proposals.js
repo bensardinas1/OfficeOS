@@ -4,18 +4,24 @@
  * Parses an approval line like:
  *   "approve p-2026-05-21-001, p-2026-05-21-003; decline p-2026-05-21-002"
  *
- * For each approved proposal:
- *   - Atomically patches the target config file (companies.json or account-types.json).
+ * For each approved proposal targeting `companies.<id>.<field>`:
+ *   - Atomically appends payload to the target array in config/companies.json.
  *   - Writes a memory journal entry: memory/rule-<id>.md
  *   - If sourceMemoryFile is set, appends "migrated to config on <date>" to that file.
+ *
+ * Only `companies.*` targets are supported in v1. Approved proposals with other
+ * target roots (e.g., `account-types.*`) are pushed to report.skipped without
+ * mutating state.
  *
  * For each declined proposal: marks status="declined" in proposed-rules.json.
  *
  * Atomic writes: temp file + rename, with EPERM/EXDEV fallback (Windows + OneDrive).
  */
 
-import { readFileSync, writeFileSync, renameSync, copyFileSync, unlinkSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, appendFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { atomicWrite } from "./fs-utils.js";
 
 export function parseApprovalLine(line) {
   const result = { approve: [], decline: [] };
@@ -31,22 +37,6 @@ export function parseApprovalLine(line) {
     if (declineMatch) result.decline.push(...ids);
   }
   return result;
-}
-
-function atomicWrite(path, content) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  writeFileSync(tmp, content, "utf-8");
-  try {
-    renameSync(tmp, path);
-  } catch (err) {
-    if (err.code === "EPERM" || err.code === "EXDEV") {
-      copyFileSync(tmp, path);
-      unlinkSync(tmp);
-    } else {
-      throw err;
-    }
-  }
 }
 
 function targetPathPieces(target) {
@@ -74,7 +64,7 @@ export function applyProposals({ approve, decline }, { companiesPath, proposalsP
 
   for (const p of proposals.proposals) {
     if (approvedSet.has(p.id)) {
-      if (p.status !== "pending") { report.skipped.push(p); continue; }
+      if (p.status !== "pending") { report.skipped.push({ id: p.id, status: p.status, reason: "not-pending" }); continue; }
       if (p.target.startsWith("companies.")) {
         applyToCompanies(companies, p.target, p.payload);
       } else {
@@ -102,7 +92,7 @@ export function applyProposals({ approve, decline }, { companiesPath, proposalsP
         }
       }
     } else if (declinedSet.has(p.id)) {
-      if (p.status !== "pending") { report.skipped.push(p); continue; }
+      if (p.status !== "pending") { report.skipped.push({ id: p.id, status: p.status, reason: "not-pending" }); continue; }
       p.status = "declined";
       p.declinedAt = now;
       report.declined.push(p);
@@ -116,21 +106,23 @@ export function applyProposals({ approve, decline }, { companiesPath, proposalsP
     }
   }
 
-  atomicWrite(proposalsPath, JSON.stringify(proposals, null, 2));
+  // Write the live config first. If this fails, proposals stay "pending"
+  // and the user can retry. Writing proposals first risked marking a
+  // proposal "approved" without its companies.json patch landing.
   atomicWrite(companiesPath, JSON.stringify(companies, null, 2));
+  atomicWrite(proposalsPath, JSON.stringify(proposals, null, 2));
 
   return report;
 }
 
 // CLI mode (optional)
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && process.argv[1].endsWith("apply-proposals.js")) {
   const line = process.argv.slice(2).join(" ");
   if (!line) {
     console.error('Usage: node scripts/apply-proposals.js "approve p-... ; decline p-..."');
     process.exit(1);
   }
   const parsed = parseApprovalLine(line);
-  const { fileURLToPath } = await import("node:url");
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const root = join(__dirname, "..");
   const report = applyProposals(parsed, {
