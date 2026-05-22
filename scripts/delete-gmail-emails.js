@@ -8,15 +8,19 @@
  */
 
 import { buildGmailClient } from "./gmail-client.js";
+import { verifyGmailAccount } from "./gmail-verify.js";
 
-const messageIds = process.argv.slice(2);
+// First positional is accountId; we use it to verify the authenticated Gmail
+// session matches the configured account before mutating any messages.
+const [, , accountIdArg, ...messageIds] = process.argv;
 
-if (messageIds.length === 0) {
-  console.error("Usage: node scripts/delete-gmail-emails.js <messageId1> [messageId2 ...]");
+if (!accountIdArg || messageIds.length === 0) {
+  console.error("Usage: node scripts/delete-gmail-emails.js <accountId> <messageId1> [messageId2 ...]");
   process.exit(1);
 }
 
 const gmail = await buildGmailClient();
+await verifyGmailAccount(gmail, accountIdArg);
 
 let trashed = 0;
 let failed = 0;

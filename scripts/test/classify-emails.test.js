@@ -8,6 +8,10 @@ import {
   matchesUrgencyFlags,
   classifyEmail,
   applyNoiseFilter,
+  detectBulkSignals,
+  senderRuleApplies,
+  matchesScamPattern,
+  matchesDeletionPattern,
 } from "../classify-emails.js";
 import { emails } from "./fixtures/emails.js";
 import {
@@ -193,6 +197,64 @@ describe("applyNoiseFilter", () => {
   });
 });
 
+describe("detectBulkSignals", () => {
+  const userEmail = "user@testbiz.com";
+
+  it("returns score 0 for non-bulk email", () => {
+    const result = detectBulkSignals(emails.fromInternalDomain, userEmail);
+    assert.equal(result.score, 0);
+    assert.deepEqual(result.signals, []);
+  });
+
+  it("detects List-Unsubscribe header", () => {
+    const result = detectBulkSignals(emails.bulkWithUnsubscribe, userEmail);
+    assert.ok(result.signals.includes("list-unsubscribe"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects Precedence: bulk", () => {
+    const result = detectBulkSignals(emails.bulkWithPrecedence, userEmail);
+    assert.ok(result.signals.includes("precedence"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects Gmail CATEGORY_PROMOTIONS", () => {
+    const result = detectBulkSignals(emails.bulkGmailPromo, userEmail);
+    assert.ok(result.signals.includes("gmail-category"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects BCC (user email not in To or CC)", () => {
+    const result = detectBulkSignals(emails.bulkBccDetected, userEmail);
+    assert.ok(result.signals.includes("bcc"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("detects marketing subdomain (mail.)", () => {
+    const result = detectBulkSignals(emails.bulkMarketingSubdomain, userEmail);
+    assert.ok(result.signals.includes("marketing-subdomain"));
+    assert.ok(result.score >= 1);
+  });
+
+  it("scores multiple signals additively", () => {
+    const result = detectBulkSignals(emails.bulkTwoSignals, userEmail);
+    assert.equal(result.score, 2);
+    assert.ok(result.signals.includes("list-unsubscribe"));
+    assert.ok(result.signals.includes("bcc"));
+  });
+
+  it("scores three signals", () => {
+    const result = detectBulkSignals(emails.bulkThreeSignals, userEmail);
+    assert.equal(result.score, 3);
+  });
+
+  it("does not flag direct email to user as BCC", () => {
+    const directEmail = { ...emails.fyi, toRecipients: "user@testbiz.com", ccRecipients: "" };
+    const result = detectBulkSignals(directEmail, userEmail);
+    assert.ok(!result.signals.includes("bcc"));
+  });
+});
+
 // Helper: run the classify() pipeline using fixture data (avoids reading live config files)
 function classifyWithFixtures(emailBatch, account, typeConfig) {
   const categories = resolveCategories(typeConfig, account);
@@ -218,6 +280,43 @@ function classifyWithFixtures(emailBatch, account, typeConfig) {
   return result;
 }
 
+describe("classifyEmail — bulk signal integration", () => {
+  const categories = resolveCategories(businessTypeConfig, businessAccount);
+  const downrankList = resolveDownrank(businessTypeConfig, businessAccount);
+
+  it("classifies 2-signal bulk email as ignore at threshold 2", () => {
+    const cat = classifyEmail(emails.bulkTwoSignals, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("classifies 1-signal bulk email as fyi at threshold 2 (below threshold)", () => {
+    const cat = classifyEmail(emails.bulkWithUnsubscribe, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "fyi");
+  });
+
+  it("classifies 3-signal bulk email as ignore at threshold 2", () => {
+    const cat = classifyEmail(emails.bulkThreeSignals, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("does NOT reclassify protected sender even with bulk signals", () => {
+    const cat = classifyEmail(emails.bulkFromProtectedSender, businessAccount, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "action"); // testbiz.com is a prioritySender domain
+  });
+
+  it("classifies 1-signal bulk email as ignore at threshold 1", () => {
+    const aggressiveTypeConfig = { ...businessTypeConfig, bulkSignalThreshold: 1 };
+    const cat = classifyEmail(emails.bulkWithUnsubscribe, businessAccount, aggressiveTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+
+  it("respects account-level threshold override", () => {
+    const accountWithOverride = { ...businessAccount, bulkSignalThreshold: 1 };
+    const cat = classifyEmail(emails.bulkWithUnsubscribe, accountWithOverride, businessTypeConfig, categories, downrankList);
+    assert.equal(cat, "ignore");
+  });
+});
+
 describe("classify() — integration", () => {
   it("returns structured result with categories and deletionCandidates", () => {
     const emailBatch = [emails.fromInternalDomain, emails.newsletter, emails.withUrgencyFlag];
@@ -238,5 +337,209 @@ describe("classify() — integration", () => {
   it("puts priority sender in action category for business account", () => {
     const result = classifyWithFixtures([emails.fromInternalDomain], businessAccount, businessTypeConfig);
     assert.ok(result.categories.action.emails.length > 0);
+  });
+});
+
+// Helper that bypasses loadConfig() by injecting account + type directly.
+// Used by tests that want to test classify() behavior without filesystem config.
+function classifyWithAccount(emails, account, typeConfig) {
+  // Reproduce the inner logic of classify() that runs after loadConfig.
+  const categories = resolveCategories(typeConfig, account);
+  const downrankList = resolveDownrank(typeConfig, account);
+  const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
+  const neverDeleteList = [...(policy.neverDelete || []), ...(account.neverDelete || [])];
+  const alwaysDeleteList = [...(policy.alwaysDelete || []), ...(account.alwaysDelete || [])];
+  const scamPatterns = account.scamPatterns || [];
+  const deletionCategoryIds = new Set(policy.categories);
+
+  const result = { categories: {}, deletionCandidates: [] };
+  for (const cat of categories) result.categories[cat.id] = { label: cat.label, emails: [] };
+
+  for (const email of emails) {
+    let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+    const alwaysDeleteApplies = alwaysDeleteList.some(r => senderRuleApplies(email, r));
+    const scamApplies = scamPatterns.some(p => matchesScamPattern(email, p));
+    const isProtected = matchesSender(email, neverDeleteList);
+    const forceDelete = (alwaysDeleteApplies || scamApplies) && !isProtected;
+    if (forceDelete) categoryId = "ignore";
+    if (!result.categories[categoryId]) result.categories[categoryId] = { label: categoryId, emails: [] };
+    result.categories[categoryId].emails.push(email);
+    if (forceDelete) {
+      result.deletionCandidates.push(email);
+    } else if (isProtected) {
+      // protected
+    } else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns || [])) {
+      result.deletionCandidates.push(email);
+    }
+  }
+  return result;
+}
+
+describe("senderRuleApplies — unless clause on alwaysDelete", () => {
+  const ebayMarketingRule = {
+    type: "name",
+    value: "eBay",
+    label: "eBay marketing",
+    unless: {
+      subjectContains: ["delivered", "out for delivery", "order", "security", "buyer", "seller"]
+    }
+  };
+
+  it("returns true when sender matches and unless is not present", () => {
+    const rule = { type: "name", value: "eBay", label: "eBay" };
+    const email = { fromName: "eBay", subject: "Big sale this week" };
+    assert.equal(senderRuleApplies(email, rule), true);
+  });
+
+  it("returns false when sender matches but unless.subjectContains matches", () => {
+    const email = { fromName: "eBay", subject: "Your order is OUT FOR DELIVERY" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), false);
+  });
+
+  it("returns true when sender matches and unless.subjectContains does not match", () => {
+    const email = { fromName: "eBay", subject: "Deal Days — extra 20% off" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), true);
+  });
+
+  it("returns false when sender does not match (regardless of unless)", () => {
+    const email = { fromName: "Amazon", subject: "Your order is delivered" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), false);
+  });
+
+  it("unless.subjectContains is case-insensitive", () => {
+    const email = { fromName: "ebay", subject: "ORDER confirmed" };
+    assert.equal(senderRuleApplies(email, ebayMarketingRule), false);
+  });
+});
+
+describe("classify-emails — unless clause on personal alwaysDelete", () => {
+  const personalAccountWithEbayUnless = {
+    ...personalAccount,
+    alwaysDelete: [
+      {
+        type: "name",
+        value: "eBay",
+        label: "eBay marketing",
+        unless: { subjectContains: ["delivered", "order", "security"] }
+      }
+    ]
+  };
+
+  it("keeps eBay transactional email out of deletion candidates", () => {
+    const emails = [
+      { id: "1", fromName: "eBay", from: "noreply@ebay.com", subject: "Your order is delivered" }
+    ];
+    const result = classifyWithAccount(emails, personalAccountWithEbayUnless, personalTypeConfig);
+    assert.equal(result.deletionCandidates.length, 0);
+  });
+
+  it("deletes eBay promotional email", () => {
+    const emails = [
+      { id: "1", fromName: "eBay", from: "noreply@ebay.com", subject: "Flash deal — 50% off" }
+    ];
+    const result = classifyWithAccount(emails, personalAccountWithEbayUnless, personalTypeConfig);
+    assert.equal(result.deletionCandidates.length, 1);
+  });
+});
+
+describe("matchesScamPattern", () => {
+  const annualReportScam = {
+    label: "Annual Report filing scam",
+    subjectAll: ["annual report"],
+    senderAllowlist: ["sunbiz.org"],
+    action: "delete"
+  };
+
+  it("matches when subject contains all subjectAll terms and sender not in allowlist", () => {
+    const email = {
+      from: "renew@flcorpfiling.com",
+      subject: "2026 Annual Report Filing Notice"
+    };
+    assert.equal(matchesScamPattern(email, annualReportScam), true);
+  });
+
+  it("does not match when sender is in allowlist", () => {
+    const email = {
+      from: "noreply@sunbiz.org",
+      subject: "Annual Report Reminder"
+    };
+    assert.equal(matchesScamPattern(email, annualReportScam), false);
+  });
+
+  it("does not match when subject is missing a subjectAll term", () => {
+    const email = {
+      from: "renew@flcorpfiling.com",
+      subject: "Corporate Filing Reminder"
+    };
+    assert.equal(matchesScamPattern(email, annualReportScam), false);
+  });
+
+  it("matches all subjectAll terms (multi-term)", () => {
+    const pattern = { subjectAll: ["annual report", "filing"], senderAllowlist: [] };
+    const email1 = { from: "x@y.com", subject: "Annual Report — filing due" };
+    const email2 = { from: "x@y.com", subject: "Annual Report" };
+    assert.equal(matchesScamPattern(email1, pattern), true);
+    assert.equal(matchesScamPattern(email2, pattern), false);
+  });
+
+  it("is case-insensitive on subject and sender domain", () => {
+    const email = { from: "Renew@FLCorpFiling.COM", subject: "ANNUAL REPORT 2026" };
+    assert.equal(matchesScamPattern(email, annualReportScam), true);
+  });
+
+  it("empty subjectAll never matches (defensive)", () => {
+    const pattern = { subjectAll: [], senderAllowlist: ["sunbiz.org"] };
+    const email = { from: "anything@x.com", subject: "Anything" };
+    assert.equal(matchesScamPattern(email, pattern), false);
+  });
+});
+
+describe("classify-emails — scamPatterns force into deletion", () => {
+  const summitWithScam = {
+    id: "summitmiami",
+    name: "Summit Miami",
+    accountType: "business",
+    provider: "outlook",
+    myEmail: "ben@summit.com",
+    prioritySenders: [],
+    urgencyRules: { flags: [] },
+    downrank: [],
+    alwaysDelete: [],
+    neverDelete: [],
+    scamPatterns: [{
+      label: "Annual Report scam",
+      subjectAll: ["annual report"],
+      senderAllowlist: ["sunbiz.org"],
+      action: "delete"
+    }]
+  };
+
+  it("deletes scam pattern hit from rotating domain", () => {
+    const emails = [
+      { id: "1", from: "renew@corporateusafilings.com", fromName: "Filing Co", subject: "2026 Annual Report Filing Notice" }
+    ];
+    const result = classifyWithAccount(emails, summitWithScam, businessTypeConfig);
+    assert.equal(result.deletionCandidates.length, 1);
+    assert.equal(result.categories.ignore.emails.length, 1);
+  });
+
+  it("does not delete from allowlisted sender", () => {
+    const emails = [
+      { id: "1", from: "noreply@sunbiz.org", fromName: "Sunbiz", subject: "Annual Report Reminder" }
+    ];
+    const result = classifyWithAccount(emails, summitWithScam, businessTypeConfig);
+    assert.equal(result.deletionCandidates.length, 0);
+  });
+
+  it("neverDelete wins over scamPatterns (protection precedence)", () => {
+    const account = {
+      ...summitWithScam,
+      neverDelete: [{ type: "domain", value: "flcorpfiling.com", label: "test override" }]
+    };
+    const emails = [
+      { id: "1", from: "renew@flcorpfiling.com", fromName: "Filing Co", subject: "Annual Report 2026" }
+    ];
+    const result = classifyWithAccount(emails, account, businessTypeConfig);
+    assert.equal(result.deletionCandidates.length, 0);
   });
 });

@@ -9,6 +9,7 @@
  *   echo '<json>' | node scripts/save-gmail-draft.js <accountId>
  */
 import { buildGmailClient } from "./gmail-client.js";
+import { verifyGmailAccount } from "./gmail-verify.js";
 
 export function buildRfc2822Message({ to, cc, subject, body }) {
   const lines = [
@@ -53,6 +54,7 @@ if (process.argv[1] && process.argv[1].endsWith("save-gmail-draft.js")) {
     try {
       const draftData = JSON.parse(raw);
       const gmail = await buildGmailClient(accountId);
+      await verifyGmailAccount(gmail, accountId);
       const labelId = await ensureDraftsLabel(gmail);
 
       const messageResource = { raw: buildRfc2822Message(draftData) };

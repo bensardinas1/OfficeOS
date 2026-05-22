@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "fetch-emails": "node scripts/fetch-emails.js",
+    "mcp-server": "node scripts/mcp-server.js",
     "test-auth": "node scripts/test-auth.js",
     "test": "node --test scripts/test/**/*.test.js"
   },
   "dependencies": {
     "@azure/msal-node": "^2.16.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "dotenv": "^16.4.5",
     "googleapis": "^171.4.0"
   }

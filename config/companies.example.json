@@ -18,11 +18,20 @@
         { "type": "domain", "value": "companya.com", "label": "Internal staff" },
         { "type": "name", "value": "Jane Smith", "label": "CFO" }
       ],
+      "memoryKeywords": ["company a", "ca-corp"],
       "urgencyRules": {
         "currentRule": "Description of what counts as urgent",
         "flags": ["urgent", "deadline", "request", "please review"]
       },
       "downrank": ["bulk email", "newsletters", "marketing", "unsubscribe"],
+      "scamPatterns": [
+        {
+          "label": "Annual Report filing scam (rotating third-party domains)",
+          "subjectAll": ["annual report"],
+          "senderAllowlist": ["sunbiz.org"],
+          "action": "delete"
+        }
+      ],
       "outputs": {
         "primary": "Executive summary of emails requiring action",
         "secondary": "News and market summary",
@@ -44,6 +53,7 @@
       "prioritySenders": [
         { "type": "domain", "value": "companyb.com", "label": "Internal staff" }
       ],
+      "memoryKeywords": ["company b", "cb-corp"],
       "urgencyRules": {
         "currentRule": "Description of what counts as urgent",
         "flags": ["client", "proposal", "contract", "closing"]
@@ -67,8 +77,19 @@
       "purpose": "Manage personal life admin, hobbies, and volunteer commitments efficiently",
       "keyContacts": [],
       "prioritySenders": [],
+      "memoryKeywords": [],
       "urgencyRules": { "flags": [] },
       "downrank": [],
+      "alwaysDelete": [
+        {
+          "type": "name",
+          "value": "eBay",
+          "label": "eBay marketing (transactional allowed)",
+          "unless": {
+            "subjectContains": ["delivered", "shipped", "out for delivery", "order", "security", "device", "message", "buyer", "seller", "feedback"]
+          }
+        }
+      ],
       "categoryOverrides": [
         {
           "id": "my-hobby",

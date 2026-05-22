@@ -4,6 +4,9 @@ config/*.json
 !config/*.example.json
 !config/prefs.json
 
+# Attention profile (personal relationship data)
+config/attention-profile.md
+
 # Voice profiles (generated per-account, may contain style/tone data)
 config/voice-profile-*.json
 

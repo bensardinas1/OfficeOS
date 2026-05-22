@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "officeos": {
+      "command": "node",
+      "args": ["D:/OneDrive - Brickell Payments (WORKFORCE)/Documents/OfficeOS/scripts/mcp-server.js"],
+      "env": {
+        "DOTENV_CONFIG_PATH": "D:/OneDrive - Brickell Payments (WORKFORCE)/Documents/OfficeOS/.env"
+      }
+    }
+  }
+}

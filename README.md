@@ -51,8 +51,35 @@ OfficeOS/
 
 See `config/companies.example.json` for the account configuration format. Each entry defines a company context including display name, email domain, and communication style preferences.
 
+## MCP Server (Claude Desktop)
+
+OfficeOS also ships as an MCP server for use with Claude Desktop — no approval prompts, all tools pre-authorized.
+
+### Setup
+
+1. Copy `config/claude-desktop-config.example.json` and merge into your Claude Desktop config at:
+   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+   - **Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+2. Update the path in `args` to match your OfficeOS install location
+3. Restart Claude Desktop
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `fetch_emails` | Fetch inbox emails (Outlook) |
+| `fetch_sent_emails` | Fetch sent emails for voice analysis |
+| `fetch_thread` | Fetch full email thread |
+| `classify_emails` | Classify emails into triage categories |
+| `delete_emails` | Soft-delete Outlook emails |
+| `delete_gmail_emails` | Soft-delete Gmail emails |
+| `save_draft` | Create Outlook draft |
+| `save_gmail_draft` | Create Gmail draft |
+| `list_accounts` | List configured accounts |
+| `read_config` | Read config files |
+
 ## Requirements
 
-- Claude Code CLI
+- Claude Code CLI or Claude Desktop (with MCP server)
 - Microsoft 365 / Outlook access (via MCP or direct API)
-- Node.js (for any helper scripts)
+- Node.js 18+ (for scripts and MCP server)

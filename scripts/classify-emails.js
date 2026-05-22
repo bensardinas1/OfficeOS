@@ -69,6 +69,47 @@ export function matchesSender(email, senders) {
   return false;
 }
 
+/**
+ * Returns true if `rule` matches `email` (using same logic as matchesSender for a single sender)
+ * AND the rule's `unless` clause (if present) does NOT match.
+ *
+ * Used for alwaysDelete entries to support conditional senders like:
+ *   { type: "name", value: "eBay", unless: { subjectContains: ["delivered", "order"] } }
+ *
+ * Note: only email.subject is tested — preview is intentionally excluded.
+ */
+export function senderRuleApplies(email, rule) {
+  if (!matchesSender(email, [rule])) return false;
+  if (!rule.unless) return true;
+  const subject = (email.subject || "").toLowerCase();
+  const unlessSubject = rule.unless.subjectContains || [];
+  for (const term of unlessSubject) {
+    if (subject.includes(term.toLowerCase())) return false;
+  }
+  return true;
+}
+
+/**
+ * Returns true if the email matches the scamPattern:
+ *   - subject contains ALL of pattern.subjectAll (case-insensitive)
+ *   - sender's domain is NOT in pattern.senderAllowlist (case-insensitive)
+ *
+ * Empty subjectAll never matches (defensive). Used to catch recurring scams
+ * that arrive from rotating third-party domains (e.g., Annual Report filing scam).
+ */
+export function matchesScamPattern(email, pattern) {
+  const subjectAll = pattern.subjectAll || [];
+  if (subjectAll.length === 0) return false;
+  const subject = (email.subject || "").toLowerCase();
+  for (const term of subjectAll) {
+    if (!subject.includes(term.toLowerCase())) return false;
+  }
+  const fromDomain = ((email.from || "").split("@")[1] || "").toLowerCase();
+  const allowlist = (pattern.senderAllowlist || []).map(d => d.toLowerCase());
+  if (allowlist.includes(fromDomain)) return false;
+  return true;
+}
+
 export function matchesDownrank(email, downrankList) {
   const text = `${email.subject || ""} ${email.fromName || ""} ${email.from || ""} ${email.preview || ""}`.toLowerCase();
   return downrankList.some(term => text.includes(term.toLowerCase()));
@@ -84,11 +125,67 @@ export function matchesUrgencyFlags(email, flags) {
   return flags.some(flag => text.includes(flag.toLowerCase()));
 }
 
+const MARKETING_SUBDOMAINS = ["mail.", "email.", "news.", "marketing.", "updates.", "info.", "noreply."];
+
+export function detectBulkSignals(email, userEmail) {
+  const signals = [];
+
+  // 1. List-Unsubscribe header
+  if (email.hasListUnsubscribe) {
+    signals.push("list-unsubscribe");
+  }
+
+  // 2. Precedence header
+  const prec = (email.precedence || "").toLowerCase();
+  if (prec === "bulk" || prec === "list") {
+    signals.push("precedence");
+  }
+
+  // 3. Gmail category labels
+  const cats = email.gmailCategories || [];
+  if (cats.includes("CATEGORY_PROMOTIONS") || cats.includes("CATEGORY_FORUMS")) {
+    signals.push("gmail-category");
+  }
+
+  // 4. BCC detection — user's email not in To or CC (only when To/CC data is present)
+  if (userEmail) {
+    const to = (email.toRecipients || "").toLowerCase();
+    const cc = (email.ccRecipients || "").toLowerCase();
+    const me = userEmail.toLowerCase();
+    const hasRecipientData = to.length > 0 || cc.length > 0;
+    if (hasRecipientData && !to.includes(me) && !cc.includes(me)) {
+      signals.push("bcc");
+    }
+  }
+
+  // 5. Marketing subdomain
+  const fromDomain = (email.from || "").split("@")[1] || "";
+  if (MARKETING_SUBDOMAINS.some(prefix => fromDomain.startsWith(prefix))) {
+    signals.push("marketing-subdomain");
+  }
+
+  return { score: signals.length, signals };
+}
+
 export function classifyEmail(email, account, typeConfig, categories, downrankList) {
   // 1. Downrank check (type defaults + account-level) → IGNORE
   if (matchesDownrank(email, downrankList)) return "ignore";
 
-  // 2. Rich category overrides — check each for its own senders, urgency flags, and downrank
+  // 2. Check if sender is protected (prioritySenders or neverDelete)
+  const allPrioritySenders = [
+    ...(account.prioritySenders || []),
+    ...(account.neverDelete || []),
+  ];
+  const isProtected = allPrioritySenders.length > 0 && matchesSender(email, allPrioritySenders);
+
+  // 3. Bulk signal check (skip for protected senders)
+  if (!isProtected) {
+    const threshold = account.bulkSignalThreshold ?? typeConfig.bulkSignalThreshold ?? 2;
+    const { score } = detectBulkSignals(email, account.myEmail);
+    if (score >= threshold) return "ignore";
+  }
+
+  // 4. Rich category overrides — check each for its own senders, urgency flags, and downrank
   for (const cat of categories) {
     if (cat.hidden) continue;
     if (cat.downrank && matchesDownrank(email, cat.downrank)) return "ignore";
@@ -149,17 +246,47 @@ export function classify(emails, accountId) {
     result.categories[cat.id] = { label: cat.label, hidden: cat.hidden || false, emails: [] };
   }
 
+  // Merge neverDelete and alwaysDelete from type defaults + account overrides
+  const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
+  const neverDeleteList = [
+    ...(policy.neverDelete || []),
+    ...(account.neverDelete || []),
+  ];
+  const alwaysDeleteList = [
+    ...(policy.alwaysDelete || []),
+    ...(account.alwaysDelete || []),
+  ];
+  const scamPatterns = account.scamPatterns || [];
+  const deletionCategoryIds = new Set(policy.categories);
+
   for (const email of emails) {
     let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+
+    const alwaysDeleteApplies = alwaysDeleteList.some(r => senderRuleApplies(email, r));
+    const scamApplies = scamPatterns.some(p => matchesScamPattern(email, p));
+    const isProtected = matchesSender(email, neverDeleteList);
+    const forceDelete = (alwaysDeleteApplies || scamApplies) && !isProtected;
+
+    // alwaysDelete / scamPatterns override category — reclassify to ignore
+    if (forceDelete) {
+      categoryId = "ignore";
+    }
 
     if (!result.categories[categoryId]) {
       result.categories[categoryId] = { label: categoryId, hidden: false, emails: [] };
     }
     result.categories[categoryId].emails.push(email);
 
-    const policy = typeConfig.deletionPolicy || { categories: ["ignore"], patterns: [] };
-    const deletionCategoryIds = new Set(policy.categories);
-    if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns)) {
+    // Force into deletion candidates
+    if (forceDelete) {
+      result.deletionCandidates.push(email);
+    }
+    // neverDelete protects against pattern/category-based deletion
+    else if (isProtected) {
+      // skip — protected sender
+    }
+    // Standard category/pattern-based deletion
+    else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns || [])) {
       result.deletionCandidates.push(email);
     }
   }

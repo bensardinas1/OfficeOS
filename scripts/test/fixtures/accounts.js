@@ -9,7 +9,8 @@ export const businessTypeConfig = {
   downrankDefaults: ["bulk email", "newsletters", "marketing", "solicitations", "unsubscribe", "promotional"],
   noiseFilters: null,
   dailyBrief: { section: "main" },
-  taskCapture: "auto"
+  taskCapture: "auto",
+  bulkSignalThreshold: 2
 };
 
 export const personalTypeConfig = {
@@ -34,7 +35,8 @@ export const personalTypeConfig = {
                      "you might like", "earn", "reward points", "upgrade"]
   },
   dailyBrief: { section: "personal-appendix" },
-  taskCapture: "manual"
+  taskCapture: "manual",
+  bulkSignalThreshold: 1
 };
 
 export const businessAccount = {
@@ -49,6 +51,7 @@ export const businessAccount = {
   urgencyRules: {
     flags: ["urgent", "deadline", "review", "terminated"]
   },
+  myEmail: "user@testbiz.com",
   downrank: ["solicitation"],
   categoryOverrides: []
 };
@@ -60,6 +63,7 @@ export const personalAccount = {
   provider: "gmail",
   prioritySenders: [],
   urgencyRules: { flags: [] },
+  myEmail: "user@personal.com",
   downrank: [],
   categoryOverrides: [
     {
