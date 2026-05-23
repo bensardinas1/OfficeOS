@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runMorningBrief, determineWindow, isCatchUp } from "../morning-brief.js";
+import { runMorningBrief, determineWindow, isCatchUp, isDraftable } from "../morning-brief.js";
 import { sampleAccounts, sampleTypeConfig, sampleEmails } from "./fixtures/morning-brief.js";
 
 describe("determineWindow", () => {
@@ -379,5 +379,107 @@ describe("actionableCategoryIds fallback", () => {
     };
     const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true }, deps });
     assert.ok(result.needsDecision.length > 0, "respond emails should be in needsDecision even without actionable flag (back-compat)");
+  });
+});
+
+describe("isDraftable — false-positive guards", () => {
+  // The bare /\bdecline\b/i heuristic previously matched credit-card-declined
+  // notifications, leading to wasted drafts. These tests pin the tighter
+  // contextual heuristics.
+
+  it("does NOT match a Microsoft credit-card-declined notification", () => {
+    const email = {
+      subject: "Your credit card was declined—try paying again",
+      preview: "The credit card used to pay invoice #G159864615 was declined. Decline reason: Insufficient funds. Review your payment method."
+    };
+    assert.equal(isDraftable(email), false);
+  });
+
+  it("does NOT match a routine subscription renewal notice", () => {
+    const email = {
+      subject: "Your Microsoft 365 subscription will renew on June 15",
+      preview: "Your annual subscription will renew automatically. No action needed."
+    };
+    assert.equal(isDraftable(email), false);
+  });
+
+  it("does NOT match a verification confirm-email request", () => {
+    const email = {
+      subject: "Please confirm your email address",
+      preview: "Click the link below to confirm your email."
+    };
+    assert.equal(isDraftable(email), false);
+  });
+
+  it("does NOT match a calendar reminder (schedule keyword, no invite)", () => {
+    const email = {
+      subject: "Schedule reminder: weekly digest",
+      preview: "Here is your scheduled weekly digest."
+    };
+    assert.equal(isDraftable(email), false);
+  });
+
+  it("DOES match an Outlook 'Declined:' calendar response subject", () => {
+    const email = {
+      subject: "Declined: Quarterly Review — May 25",
+      preview: "Jay Eslick declined this meeting."
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match a calendar invite subject", () => {
+    const email = {
+      subject: "Calendar invite: Path Peptides onboarding call",
+      preview: "When: Friday, May 30, 10am EST"
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match 'invite to meet' phrasing", () => {
+    const email = {
+      subject: "Invite to meet next week",
+      preview: "Are you free Wednesday for a 30-min chat?"
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match RSVP requests", () => {
+    const email = {
+      subject: "Please RSVP — Sigma Phi Epsilon FIU spring banquet",
+      preview: "We need a headcount by Friday."
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match an 'are you available' scheduling probe", () => {
+    const email = {
+      subject: "Are you available Thursday?",
+      preview: "Wanted to grab 15 minutes to discuss the LOI."
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match a renewal decision request", () => {
+    const email = {
+      subject: "Renewal decision needed — Adobe Creative Cloud",
+      preview: "Your annual plan ends June 1. Please confirm renewal."
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match an explicit decline of an invitation", () => {
+    const email = {
+      subject: "Re: Quarterly Review",
+      preview: "Unfortunately I have to decline your meeting invitation — I'll be traveling that week."
+    };
+    assert.equal(isDraftable(email), true);
+  });
+
+  it("DOES match a reschedule-the-meeting request", () => {
+    const email = {
+      subject: "Can we reschedule the call?",
+      preview: "Something came up — can we move to next Tuesday?"
+    };
+    assert.equal(isDraftable(email), true);
   });
 });

@@ -21,9 +21,26 @@ import { discoverAutoTrash, discoverScamPatterns, discoverMemoryBackfill } from 
 const CATCH_UP_THRESHOLD_HOURS = 72;
 const CATCH_UP_DECISION_CAP = 25;
 const CATCH_UP_DRAFT_CAP = 5;
+// DRAFTABLE_HEURISTICS — patterns indicating an email is a short-reply candidate.
+// Each must signal a conversational/scheduling exchange where a 1-3 sentence
+// reply makes sense (calendar invites, simple thread continuations, decisions
+// on renewals). Tightened from bare action verbs to phrase-level patterns after
+// observing false positives — e.g., bare `\bdecline\b` matched "Your credit
+// card was declined" from Microsoft, which is not a reply-shaped email.
 const DRAFTABLE_HEURISTICS = [
-  /\bcalendar\b/i, /\binvite\b/i, /\bdecline\b/i, /\brenewal\b/i,
-  /\bconfirm\b/i, /\bschedule\b/i, /\baccept\b/i
+  // Outlook calendar response subject prefixes
+  /^(?:Declined|Accepted|Tentative|Tentatively\s+Accepted):/i,
+  // Calendar / meeting invites and responses
+  /\b(?:calendar|meeting)\s+invit\w*\b/i,
+  /\binvit\w*\s+(?:to|for)\s+(?:meet|call|chat|coffee|lunch|dinner|review)/i,
+  /\b(?:declin\w+|accept\w+)\s+(?:your|my|the|this|our)\s+(?:invit|meeting|invitation|request|proposal|offer)\b/i,
+  /\bre-?schedul\w*\s+(?:the\s+|a\s+|our\s+)?(?:meeting|call|appointment)\b/i,
+  /\b(?:please\s+)?rsvp\b/i,
+  /\bconfirm\s+(?:attendance|the\s+meeting|your\s+availability|the\s+appointment)\b/i,
+  /\bcan\s+(?:we|i)\s+(?:reschedul|meet|chat|call|talk)/i,
+  /\bare\s+you\s+(?:available|free)\b/i,
+  // Renewal / contract decisions (not informational renewal notices)
+  /\brenewal\s+(?:decision|action\s+required|approval\s+needed|due\s+for\s+approval)\b/i,
 ];
 
 export function determineWindow(flags, { now, lastRun }) {
@@ -53,7 +70,7 @@ export function isCatchUp(window) {
   return window.windowHours > CATCH_UP_THRESHOLD_HOURS;
 }
 
-function isDraftable(email) {
+export function isDraftable(email) {
   const text = `${email.subject || ""} ${email.preview || ""}`;
   return DRAFTABLE_HEURISTICS.some(rx => rx.test(text));
 }
