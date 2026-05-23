@@ -244,3 +244,56 @@ describe("isPendingProposal — exact field equality", () => {
     assert.equal(isPendingProposal(proposals, "companies.summitmiami.scamPatterns", "foo@x.com"), false);
   });
 });
+
+describe("discoverScamPatterns — over-broad single-word patterns", () => {
+  // Real-world false positives observed on 2026-05-23 live run:
+  // ["with"], ["inside"], ["about"], ["save"], ["benjamin"] all proposed
+  // because the STOPWORDS list was too sparse AND because single-term
+  // intersections were emitted. Fix: expand stopwords, require >=2 terms.
+
+  it("does NOT propose when the intersected pattern is a single stopword", () => {
+    // Three subjects from three domains that share only the stopword "save"
+    const recentDeletions = [
+      { accountId: "personal", subject: "Save 20% on running shoes", senderDomain: "nike.com", deletedAt: "2026-05-22T00:00:00Z" },
+      { accountId: "personal", subject: "Save the date — annual gala", senderDomain: "charity.org", deletedAt: "2026-05-22T01:00:00Z" },
+      { accountId: "personal", subject: "Save your spot — free webinar", senderDomain: "marketing.io", deletedAt: "2026-05-22T02:00:00Z" }
+    ];
+    const proposals = discoverScamPatterns(recentDeletions, [{ id: "personal", neverDelete: [] }], [], { now: "2026-05-23T00:00:00Z" });
+    assert.equal(proposals.length, 0, "should not propose any rule when the only commonality is a stopword");
+  });
+
+  it("does NOT propose when the intersected pattern is a single non-stopword content term", () => {
+    // Three subjects that share exactly one content term ("widget") but nothing else
+    const recentDeletions = [
+      { accountId: "personal", subject: "Widget order confirmation", senderDomain: "a.com", deletedAt: "2026-05-22T00:00:00Z" },
+      { accountId: "personal", subject: "Widget recall notice", senderDomain: "b.com", deletedAt: "2026-05-22T01:00:00Z" },
+      { accountId: "personal", subject: "Widget delivery update", senderDomain: "c.com", deletedAt: "2026-05-22T02:00:00Z" }
+    ];
+    const proposals = discoverScamPatterns(recentDeletions, [{ id: "personal", neverDelete: [] }], [], { now: "2026-05-23T00:00:00Z" });
+    assert.equal(proposals.length, 0, "should not propose a single-term pattern even if the term is non-stopword");
+  });
+
+  it("DOES still propose when at least 2 content terms intersect (Annual Report scam still works)", () => {
+    const recentDeletions = [
+      { accountId: "summitmiami", subject: "Annual Report Filing Notice", senderDomain: "flcorpfiling.com", deletedAt: "2026-05-15T00:00:00Z" },
+      { accountId: "summitmiami", subject: "Annual Report 2026 — Action Required", senderDomain: "corporateusafilings.com", deletedAt: "2026-05-18T00:00:00Z" },
+      { accountId: "summitmiami", subject: "Annual Report Reminder for Your LLC", senderDomain: "myfloridacorpfilings.com", deletedAt: "2026-05-20T00:00:00Z" }
+    ];
+    const proposals = discoverScamPatterns(recentDeletions, [{ id: "summitmiami", neverDelete: [] }], [], { now: "2026-05-21T00:00:00Z" });
+    assert.equal(proposals.length, 1, "Annual Report scam should still be detected (multi-term intersection)");
+    assert.equal(proposals[0].payload.subjectAll[0], "annual report");
+  });
+
+  // Pin specific stopwords that bit us in the 2026-05-23 live run
+  for (const stopword of ["with", "inside", "about", "save"]) {
+    it(`filters "${stopword}" as a stopword in single-term intersections`, () => {
+      const recentDeletions = [
+        { accountId: "personal", subject: `Email ${stopword} alpha one`, senderDomain: "a.com", deletedAt: "2026-05-22T00:00:00Z" },
+        { accountId: "personal", subject: `Notice ${stopword} bravo two`, senderDomain: "b.com", deletedAt: "2026-05-22T01:00:00Z" },
+        { accountId: "personal", subject: `Update ${stopword} charlie three`, senderDomain: "c.com", deletedAt: "2026-05-22T02:00:00Z" }
+      ];
+      const proposals = discoverScamPatterns(recentDeletions, [{ id: "personal", neverDelete: [] }], [], { now: "2026-05-23T00:00:00Z" });
+      assert.equal(proposals.length, 0, `"${stopword}" should be filtered by STOPWORDS, leaving no intersection`);
+    });
+  }
+});

@@ -113,10 +113,64 @@ export function discoverAutoTrash(history, accounts, pendingProposals, { now }) 
 /**
  * Extract a "fuzzy subject pattern" — the common lowercase content words
  * across a set of subject strings. Stopwords filtered. Returns up to 2 terms.
+ *
+ * The STOPWORDS list is intentionally broad — single-word patterns like
+ * `["with"]` or `["save"]` would catastrophically over-delete if approved as
+ * a scamPattern. Anything that's a common English connector, modal verb,
+ * preposition, generic action verb, or vague noun is filtered out so it
+ * can't seed a one-word fingerprint.
  */
+const STOPWORDS = new Set([
+  // articles / pronouns / determiners
+  "the", "a", "an", "this", "that", "these", "those", "your", "you", "yours",
+  "our", "ours", "their", "theirs", "they", "them", "his", "her", "hers", "its",
+  "my", "mine", "me", "we", "us", "i", "he", "she", "it", "who", "whose", "what",
+  "which", "any", "all", "some", "each", "every", "other", "another", "such",
+  "own", "same", "many", "much", "more", "most", "few", "less", "least", "both",
+  "either", "neither", "none", "one", "two", "three",
+  // be / have / do / modal verbs
+  "is", "are", "was", "were", "been", "being", "be",
+  "have", "has", "had", "having",
+  "do", "does", "did", "done", "doing",
+  "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+  // conjunctions / connectors
+  "and", "or", "but", "nor", "yet", "so", "for", "if", "then", "than", "as",
+  "because", "since", "though", "although", "while", "whereas", "unless",
+  // prepositions
+  "to", "in", "on", "at", "by", "with", "from", "about", "into", "onto", "upon",
+  "over", "under", "above", "below", "between", "among", "through", "throughout",
+  "during", "before", "after", "across", "behind", "beyond", "near", "next",
+  "off", "out", "up", "down", "back", "away", "along", "around", "without",
+  "within", "against", "toward", "towards", "via",
+  // adverbs and vague modifiers
+  "also", "still", "just", "even", "very", "really", "quite", "rather", "ever",
+  "never", "always", "often", "sometimes", "now", "today", "yesterday", "soon",
+  "later", "then", "again", "here", "there", "where", "when", "how", "why",
+  "only", "almost", "already", "thus", "however", "instead", "anyway",
+  // common nouns / generic content
+  "time", "way", "thing", "things", "stuff", "people", "person", "thing", "day",
+  "year", "week", "month", "morning", "afternoon", "evening", "night", "today",
+  // generic verbs
+  "make", "made", "making", "get", "got", "getting", "go", "going", "went", "gone",
+  "come", "came", "coming", "see", "saw", "seen", "seeing", "look", "looking",
+  "find", "found", "finding", "tell", "told", "telling", "ask", "asked", "asking",
+  "try", "tried", "trying", "need", "needed", "want", "wanted", "feel", "felt",
+  "seem", "seemed", "let", "put", "keep", "kept", "help", "helped", "show", "showed",
+  "work", "worked", "play", "played", "move", "moved", "live", "lived",
+  "say", "said", "saying", "know", "knew", "knowing", "think", "thought",
+  "take", "took", "taking", "taken", "give", "gave", "given", "giving",
+  "save", "saved", "saving", "send", "sent", "sending",
+  // common adjectives / vague descriptors
+  "good", "bad", "new", "old", "big", "small", "high", "low", "long", "short",
+  "best", "worst", "great", "right", "wrong", "true", "false", "free", "open",
+  "early", "late", "last", "first", "second", "third", "next", "previous",
+  "inside", "outside",
+  // email/transactional plumbing
+  "re", "fw", "fwd", "reply", "subject", "email", "message",
+]);
+const NUMERIC_TOKEN = /^\d+$/;
+
 function commonSubjectTerms(subjects) {
-  const STOPWORDS = new Set(["the", "a", "an", "your", "you", "is", "for", "of", "and", "to", "in", "on", "at", "re", "fw", "fwd"]);
-  const NUMERIC_TOKEN = /^\d+$/;
   const sets = subjects.map(s =>
     new Set(
       s.toLowerCase()
@@ -174,7 +228,11 @@ export function discoverScamPatterns(recentDeletions, accounts, pendingProposals
 
       // Look at all subjects sharing this term and intersect to find the full pattern
       const terms = commonSubjectTerms(info.deletions.map(d => d.subject));
-      if (terms.length === 0) continue;
+      // Require at least 2 content terms in the intersection. Single-word
+      // patterns like ["with"] or ["save"] are inherently over-broad — they
+      // catch huge swaths of legitimate email. If the cluster only shares
+      // one content word, skip rather than propose.
+      if (terms.length < 2) continue;
       // Join into a single phrase entry — classify-emails expects subjectAll
       // to be an array of substrings that all must appear in the subject.
       const subjectAll = [terms.join(" ")];
