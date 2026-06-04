@@ -174,8 +174,10 @@ Alias resolution from each issue's `aliases:`; ambiguous → one-line numbered s
 Without the flag, morning-brief behaves exactly as today.
 
 **Cadence C — two run paths:**
-1. **Piggyback** — the morning-brief skill ends by invoking the `/issues` assignment pass, handing over the already-fetched bundle (no second fetch). The brief gains a section: "Issues updated: N open, M new, K heuristic deletes rescued."
-2. **On-demand** — `/issues` run directly reads `issue-assignment-state.json`, fetches only the delta since last assignment, runs the pass, answers.
+1. **Piggyback** — the reasoner-pass instructions live in a shared reference file (`.claude/commands/issues/_reasoner-pass.md`) that *both* the `/issues` skill and the morning-brief skill include. (Skills are prompts, not callable functions; sharing is by include/reference, not invocation.) The morning-brief skill, after its orchestrator run, follows that shared fragment using the already-fetched bundle — no second fetch. The brief gains a section: "Issues updated: N open, M new, K heuristic deletes rescued."
+2. **On-demand** — `/issues` run directly reads `issue-assignment-state.json`, fetches only the delta since last assignment, runs the same shared reasoner-pass fragment, answers.
+
+Note: the shared reasoner-pass fragment is a prompt include, not code. The deterministic apply step it hands off to (`issue-store.js`) is the testable code boundary.
 
 **Deletion boundary (decision B), concrete:**
 - alwaysDelete / approved scamPatterns / neverDelete → handled by `classify-emails.js`, never reach the reasoner.
@@ -205,7 +207,8 @@ The deferred `discoverAutoTrash` bug: it re-proposes senders already in `alwaysD
 
 **Create:**
 - `scripts/issue-store.js` + `scripts/test/issue-store.test.js`
-- `.claude/commands/issues/issues.md`
+- `.claude/commands/issues/issues.md` (the `/issues` skill)
+- `.claude/commands/issues/_reasoner-pass.md` (shared reasoner-pass prompt fragment, included by both `/issues` and the morning-brief skill)
 - `scripts/test/fixtures/issues.js` (issue files, reasoner-output fixtures, SEAA email fixture)
 - `scripts/test/issue-applier.test.js` (applier given reasoner-output fixtures)
 
