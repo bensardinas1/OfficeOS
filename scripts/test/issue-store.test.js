@@ -141,10 +141,30 @@ describe("mergeIssues", () => {
 
     const merged = mergeIssues(target, source);
     assert.equal(merged.aliases.includes("pep"), true, "aliases combined");
-    const msgids = (merged.body.match(/msgid:\w/g) || []);
+    const msgids = (merged.body.match(/msgid:\S+/g) || []);
     assert.equal(new Set(msgids).size, msgids.length, "no duplicate msgids");
     assert.ok(msgids.includes("msgid:c"));
     assert.equal(existsSync(source._path), false, "source file removed");
+  });
+});
+
+describe("mergeIssues — full DEFAULT_BODY with blank-line-separated sections", () => {
+  it("merges linked messages without eating the next section", () => {
+    const target = createIssue(issuesDir, { title: "Alpha", aliases: ["al"] }, { now: "2026-05-27" });
+    // Simulate a real issue body: messages already under Linked messages, Log section after a blank line.
+    target.body = "## Decisions made\n\n## Open questions\n\n## Linked messages\n- msgid:AAMk111 — Neal 5/26 — hi\n\n## Log\n- 5/26 note";
+    saveIssue(target);
+    const source = createIssue(issuesDir, { title: "Beta", aliases: ["be"] }, { now: "2026-05-27" });
+    source.body = "## Linked messages\n- msgid:AAMk222 — Brad 5/27 — yo";
+    saveIssue(source);
+
+    const merged = mergeIssues(target, source);
+    assert.match(merged.body, /msgid:AAMk111/);
+    assert.match(merged.body, /msgid:AAMk222/);
+    assert.match(merged.body, /## Log/, "Log section preserved");
+    // The two long msgids are distinct under full-token matching
+    const ids = merged.body.match(/msgid:\S+/g) || [];
+    assert.equal(new Set(ids).size, 2);
   });
 });
 
@@ -169,5 +189,10 @@ describe("assignment state", () => {
     const p = join(tmpDir, "state.json");
     saveAssignmentState(p, { lastAssignedAt: { brickellpay: "2026-05-27T00:00:00Z" } });
     assert.equal(loadAssignmentState(p).lastAssignedAt.brickellpay, "2026-05-27T00:00:00Z");
+  });
+  it("returns default on corrupt JSON", () => {
+    const p = join(tmpDir, "state.json");
+    writeFileSync(p, "{ not valid json");
+    assert.deepEqual(loadAssignmentState(p), { lastAssignedAt: {} });
   });
 });

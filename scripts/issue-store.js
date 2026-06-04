@@ -76,6 +76,7 @@ const DEFAULT_BODY =
   "## Decisions made\n\n## Open questions\n\n## Linked messages\n\n## Log\n";
 
 export function createIssue(issuesDir, fields, { provisional = false, now } = {}) {
+  if (!fields || !fields.title) throw new Error("createIssue: fields.title is required");
   const id = slugify(fields.title);
   const dir = provisional ? join(issuesDir, "provisional") : issuesDir;
   mkdirSync(dir, { recursive: true });
@@ -117,12 +118,13 @@ export function snoozeIssue(issue, untilISO) {
 }
 
 function linkedMsgidLines(body) {
-  const m = (body || "").match(/##\s*Linked messages\s*\n([\s\S]*?)(\n##\s|$)/);
+  const m = (body || "").match(/##\s*Linked messages\s*\n([\s\S]*?)(?=\n\n##\s|\n##\s|$)/);
   if (!m) return [];
   return m[1].split("\n").map(l => l.trim()).filter(l => l.startsWith("- "));
 }
 
 export function mergeIssues(target, source) {
+  if (!source._path) throw new Error(`mergeIssues: source ${source.id} has no _path`);
   target.aliases = [...new Set([...(target.aliases || []), ...(source.aliases || []), source.id])];
   target.participants = [...new Set([...(target.participants || []), ...(source.participants || [])])];
   const seen = new Set();
@@ -135,7 +137,7 @@ export function mergeIssues(target, source) {
   }
   const rebuilt = `## Linked messages\n${keep.join("\n")}`;
   if (/##\s*Linked messages/.test(target.body)) {
-    target.body = target.body.replace(/##\s*Linked messages\s*\n[\s\S]*?(?=\n##\s|$)/, rebuilt + "\n");
+    target.body = target.body.replace(/##\s*Linked messages\s*\n[\s\S]*?(?=\n\n##\s|\n##\s|$)/, rebuilt + "\n");
   } else {
     target.body = `${target.body}\n\n${rebuilt}\n`;
   }
