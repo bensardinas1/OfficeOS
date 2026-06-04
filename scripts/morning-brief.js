@@ -181,6 +181,7 @@ export async function runMorningBrief({ flags, deps }) {
   const proposalsObj = loadProposals(paths.proposedRulesPath);
   const draftsIndex = loadDraftsIndex(paths.draftsIndexPath || "");
 
+  const deferHeuristic = !!flags.deferHeuristicDeletes;
   const summary = {};
   const needsDecisionAll = [];
   const draftCandidatesAll = [];
@@ -189,6 +190,8 @@ export async function runMorningBrief({ flags, deps }) {
   const warnings = [...firstRunWarnings];
   const recentDeletionsForScam = [];
   const perAccountStats = {};
+  const bundleSurvivors = [];
+  const bundleHeuristicCandidates = [];
 
   for (const account of accounts) {
     let emails;
@@ -204,12 +207,23 @@ export async function runMorningBrief({ flags, deps }) {
     const result = classifyFn(emails, account, typeConfig);
     const actionableIds = actionableCategoryIds(typeConfig);
 
-    const autoDeleteIds = result.deletionCandidates.map(e => e.id);
+    const toDelete = deferHeuristic ? (result.explicitDeletions || []) : result.deletionCandidates;
+    const autoDeleteIds = toDelete.map(e => e.id);
+
+    if (deferHeuristic) {
+      for (const [catId, bucket] of Object.entries(result.categories)) {
+        if (catId === "ignore") continue;
+        for (const e of bucket.emails) bundleSurvivors.push({ ...e, _account: account.id });
+      }
+      for (const e of (result.heuristicDeletions || [])) {
+        bundleHeuristicCandidates.push({ ...e, _account: account.id });
+      }
+    }
 
     if (!effectiveDryRun && !draftOnly && autoDeleteIds.length > 0) {
       try {
         await deleteFn(account.id, autoDeleteIds);
-        for (const e of result.deletionCandidates) {
+        for (const e of toDelete) {
           recordDeletion(history, account.id, e.from || "", {
             hasListUnsubscribe: !!e.hasListUnsubscribe,
             timestamp: now
@@ -357,6 +371,14 @@ export async function runMorningBrief({ flags, deps }) {
     atomicWrite(paths.lastRunStatePath, JSON.stringify({ lastRunAt: now }, null, 2));
   }
 
+  let bundle;
+  if (deferHeuristic) {
+    bundle = { generatedAt: now, survivors: bundleSurvivors, heuristicCandidates: bundleHeuristicCandidates };
+    if (!effectiveDryRun && paths.lastRunBundlePath) {
+      atomicWrite(paths.lastRunBundlePath, JSON.stringify(bundle, null, 2));
+    }
+  }
+
   return {
     timestamp: now,
     window,
@@ -364,6 +386,7 @@ export async function runMorningBrief({ flags, deps }) {
     requestedDryRun: dryRun,
     forcedFirstRunDryRun: effectiveDryRun && !dryRun,
     draftOnly,
+    bundle,
     summary,
     needsDecision,
     deferred,
@@ -383,6 +406,7 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
     if (args[i] === "--dry-run") flags.dryRun = true;
     else if (args[i] === "--draft-only") flags.draftOnly = true;
     else if (args[i] === "--first-run-live") flags.firstRunLive = true;
+    else if (args[i] === "--defer-heuristic-deletes") flags.deferHeuristicDeletes = true;
     else if (args[i] === "--since") flags.since = args[++i];
     else if (args[i] === "--window") flags.window = args[++i];
   }
@@ -428,7 +452,8 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
         tasksPath: join(root, "data/tasks.md"),
         triageLogPath: join(root, "data/triage-log.md"),
         lastRunStatePath: join(root, "data/last-run-state.json"),
-        draftsIndexPath: join(root, "data/drafts-index.json")
+        draftsIndexPath: join(root, "data/drafts-index.json"),
+        lastRunBundlePath: join(root, "data/.last-run-bundle.json")
       },
       accounts: companies.companies,
       typeConfigs: accountTypes,

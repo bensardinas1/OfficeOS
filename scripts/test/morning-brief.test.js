@@ -324,6 +324,49 @@ describe("runMorningBrief — orchestration", () => {
     assert.ok(result.needsDecision.find(i => i.email.id === "m3"), "m3 should still need decision");
     assert.equal(result.draftCandidates.find(i => i.email.id === "m3"), undefined, "m3 should NOT be a draft candidate");
   });
+
+  it("with --defer-heuristic-deletes: trashes only explicit deletions", async () => {
+    const deps = buildDeps();
+    deps.classifyFn = (emails, account) => {
+      const result = { accountId: account.id, accountName: account.name, accountType: account.accountType,
+        categories: { action: { label: "ACTION", emails: [] }, fyi: { label: "FYI", emails: [] }, ignore: { label: "IGNORE", emails: [] } },
+        deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
+      for (const e of emails) {
+        if (e.id === "e-explicit") { result.categories.ignore.emails.push(e); result.deletionCandidates.push(e); result.explicitDeletions.push(e); }
+        else if (e.id === "e-heur") { result.categories.ignore.emails.push(e); result.deletionCandidates.push(e); result.heuristicDeletions.push(e); }
+        else { result.categories.fyi.emails.push(e); }
+      }
+      return result;
+    };
+    deps.fetchFn = async () => ([
+      { id: "e-explicit", from: "spam@x.com", fromName: "Spam", subject: "buy", hasListUnsubscribe: true, receivedAt: "2026-05-23T05:00:00Z" },
+      { id: "e-heur", from: "news@y.com", fromName: "News", subject: "digest", hasListUnsubscribe: true, receivedAt: "2026-05-23T05:00:00Z" },
+      { id: "e-keep", from: "real@z.com", fromName: "Real", subject: "hi", hasListUnsubscribe: false, receivedAt: "2026-05-23T05:00:00Z" },
+    ]);
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true, deferHeuristicDeletes: true }, deps });
+    assert.deepEqual(deleted.map(d => d.id), ["e-explicit"]);
+    assert.equal(result.bundle.heuristicCandidates.length, 1);
+    assert.equal(result.bundle.heuristicCandidates[0].id, "e-heur");
+    assert.ok(result.bundle.survivors.find(e => e.id === "e-keep"), "survivor in bundle");
+  });
+
+  it("with --defer-heuristic-deletes: writes data/.last-run-bundle.json", async () => {
+    const deps = buildDeps();
+    deps.paths.lastRunBundlePath = join(dataDir, ".last-run-bundle.json");
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true, deferHeuristicDeletes: true }, deps });
+    assert.ok(existsSync(join(dataDir, ".last-run-bundle.json")));
+    const bundle = JSON.parse(readFileSync(join(dataDir, ".last-run-bundle.json"), "utf-8"));
+    assert.ok(Array.isArray(bundle.survivors));
+    assert.ok(Array.isArray(bundle.heuristicCandidates));
+    assert.equal(bundle.generatedAt, result.timestamp);
+  });
+
+  it("without the flag: trashes all deletionCandidates as before", async () => {
+    const deps = buildDeps();
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true }, deps });
+    assert.ok(deleted.length >= 1, "deletes happen as before");
+    assert.equal(result.bundle, undefined, "no bundle when flag off");
+  });
 });
 
 describe("actionableCategoryIds fallback", () => {
