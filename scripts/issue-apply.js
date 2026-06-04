@@ -20,7 +20,7 @@ function shortDate(iso) {
 }
 
 function appendLinkedMessage(issue, email) {
-  const line = `- msgid:${email.id} — ${email.fromName || email.from} ${shortDate(email.received)} — ${email.subject || ""}`.trim();
+  const line = `- msgid:${email.id} — ${email.fromName || email.from} ${shortDate(email.receivedAt || email.received)} — ${email.subject || ""}`.trim();
   if (issue.body.includes(`msgid:${email.id}`)) return; // idempotent
   if (/##\s*Linked messages/.test(issue.body)) {
     issue.body = issue.body.replace(/(##\s*Linked messages\s*\n)/, `$1${line}\n`);

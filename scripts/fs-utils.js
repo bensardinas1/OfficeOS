@@ -32,3 +32,20 @@ export function atomicWrite(path, content) {
     }
   }
 }
+
+/**
+ * Rename a file, falling back to copy+unlink on Windows/OneDrive EPERM or
+ * cross-device EXDEV (same rationale as atomicWrite).
+ */
+export function safeRename(from, to) {
+  try {
+    renameSync(from, to);
+  } catch (err) {
+    if (err.code === "EPERM" || err.code === "EXDEV") {
+      copyFileSync(from, to);
+      unlinkSync(from);
+    } else {
+      throw err;
+    }
+  }
+}

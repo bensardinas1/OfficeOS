@@ -213,10 +213,10 @@ export async function runMorningBrief({ flags, deps }) {
     if (deferHeuristic) {
       for (const [catId, bucket] of Object.entries(result.categories)) {
         if (catId === "ignore") continue;
-        for (const e of bucket.emails) bundleSurvivors.push({ ...e, _account: account.id });
+        for (const e of bucket.emails) bundleSurvivors.push({ ...e, account: account.id, _account: account.id });
       }
       for (const e of (result.heuristicDeletions || [])) {
-        bundleHeuristicCandidates.push({ ...e, _account: account.id });
+        bundleHeuristicCandidates.push({ ...e, account: account.id, _account: account.id });
       }
     }
 

@@ -368,6 +368,27 @@ describe("runMorningBrief — orchestration", () => {
     assert.ok(deleted.length >= 1, "deletes happen as before");
     assert.equal(result.bundle, undefined, "no bundle when flag off");
   });
+
+  it("bundle emails carry an `account` field for issue-apply to read", async () => {
+    const deps = buildDeps();
+    deps.classifyFn = (emails, account) => {
+      const result = { accountId: account.id, accountName: account.name, accountType: account.accountType,
+        categories: { fyi: { label: "FYI", emails: [] }, ignore: { label: "IGNORE", emails: [] } },
+        deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
+      for (const e of emails) {
+        if (e.id === "e-heur") { result.categories.ignore.emails.push(e); result.deletionCandidates.push(e); result.heuristicDeletions.push(e); }
+        else { result.categories.fyi.emails.push(e); }
+      }
+      return result;
+    };
+    deps.fetchFn = async () => ([
+      { id: "e-keep", from: "a@b.com", fromName: "A", subject: "hi", hasListUnsubscribe: false, receivedAt: "2026-05-23T05:00:00Z" },
+      { id: "e-heur", from: "n@y.com", fromName: "N", subject: "digest", hasListUnsubscribe: true, receivedAt: "2026-05-23T05:00:00Z" },
+    ]);
+    const result = await runMorningBrief({ flags: { window: "24h", firstRunLive: true, deferHeuristicDeletes: true }, deps });
+    assert.ok(result.bundle.survivors.every(e => typeof e.account === "string" && e.account.length > 0), "survivors carry account");
+    assert.ok(result.bundle.heuristicCandidates.every(e => typeof e.account === "string" && e.account.length > 0), "candidates carry account");
+  });
 });
 
 describe("actionableCategoryIds fallback", () => {

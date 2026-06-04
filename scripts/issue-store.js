@@ -6,10 +6,10 @@
  * data/issues/provisional/. No LLM, no judgment — pure file operations.
  */
 
-import { readFileSync, readdirSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
-import { atomicWrite } from "./fs-utils.js";
+import { atomicWrite, safeRename } from "./fs-utils.js";
 
 export function slugify(title) {
   return (title || "")
@@ -142,7 +142,11 @@ export function mergeIssues(target, source) {
     target.body = `${target.body}\n\n${rebuilt}\n`;
   }
   saveIssue(target);
-  rmSync(source._path, { force: true });
+  try {
+    rmSync(source._path, { force: true });
+  } catch (err) {
+    console.warn(`issue-store: could not remove merged source ${source._path}: ${err.message}`);
+  }
   return target;
 }
 
@@ -151,7 +155,7 @@ export function graduateProvisional(issuesDir, slug) {
   if (!existsSync(from)) return null;
   const to = join(issuesDir, `${slug}.md`);
   mkdirSync(issuesDir, { recursive: true });
-  renameSync(from, to);
+  safeRename(from, to);
   const issue = parseIssueFile(readFileSync(to, "utf-8"));
   issue._path = to;
   issue._provisional = false;
