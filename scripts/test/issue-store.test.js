@@ -37,6 +37,13 @@ describe("parseIssueFile / serializeIssue", () => {
     const parsed = parseIssueFile("just text");
     assert.equal(parsed.body, "just text");
   });
+  it("parses frontmatter even with CRLF line endings", () => {
+    const crlf = "---\r\nid: pp\r\ntitle: PP\r\nstatus: open\r\n---\r\nbody text";
+    const parsed = parseIssueFile(crlf);
+    assert.equal(parsed.id, "pp");
+    assert.equal(parsed.status, "open");
+    assert.equal(parsed.body, "body text");
+  });
 });
 
 describe("loadIssues / loadProvisional", () => {

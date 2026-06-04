@@ -19,8 +19,9 @@ export function slugify(title) {
 }
 
 export function parseIssueFile(content) {
-  const m = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!m) return { body: content.trim() };
+  const normalized = (content || "").replace(/\r\n/g, "\n");
+  const m = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!m) return { body: normalized.trim() };
   const front = yaml.load(m[1]) || {};
   return { ...front, body: (m[2] || "").trim() };
 }
@@ -41,8 +42,9 @@ function readDirIssues(dir, provisional) {
       issue._path = path;
       issue._provisional = provisional;
       out.push(issue);
-    } catch {
-      // Corrupt file — skip rather than crash the whole load.
+    } catch (err) {
+      // Corrupt file — skip rather than crash the whole load, but leave a trace.
+      console.warn(`issue-store: skipping unreadable issue file ${path}: ${err.message}`);
     }
   }
   return out;
