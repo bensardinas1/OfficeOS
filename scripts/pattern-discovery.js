@@ -81,6 +81,15 @@ function senderIsProtected(account, senderEmail) {
   return false;
 }
 
+function alreadyAutoTrashed(account, senderEmail) {
+  const domain = (senderEmail.split("@")[1] || "").toLowerCase();
+  for (const rule of (account.alwaysDelete || [])) {
+    if (rule.type === "email" && rule.value.toLowerCase() === senderEmail.toLowerCase()) return true;
+    if (rule.type === "domain" && rule.value.toLowerCase() === domain) return true;
+  }
+  return false;
+}
+
 export function discoverAutoTrash(history, accounts, pendingProposals, { now }) {
   const proposals = [];
   const datePart = (now || "").slice(0, 10);
@@ -92,6 +101,7 @@ export function discoverAutoTrash(history, accounts, pendingProposals, { now }) 
     const account = findAccount(accounts, accountId);
     if (!account) continue;
     if (senderIsProtected(account, senderEmail)) continue;
+    if (alreadyAutoTrashed(account, senderEmail)) continue;
     const target = `companies.${accountId}.alwaysDelete`;
     if (isPendingProposal(pendingProposals, target, senderEmail)) continue;
     proposals.push({
