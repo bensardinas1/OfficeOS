@@ -34,8 +34,16 @@ Note each account's `voiceProfile` for the drafting step.
 
 Pass `$ARGUMENTS` to the orchestrator via Bash:
 
+If the issue tracker is in use (data/issues/ exists), append --defer-heuristic-deletes
+so heuristic guesses are handed to the reasoner instead of trashed outright:
+
+    node scripts/morning-brief.js $ARGUMENTS --defer-heuristic-deletes
+
 ```bash
+# Default (issue tracker not in use):
 node scripts/morning-brief.js $ARGUMENTS
+# If data/issues/ exists (issue tracker in use), append the flag:
+node scripts/morning-brief.js $ARGUMENTS --defer-heuristic-deletes
 ```
 
 Capture stdout as JSON. The orchestrator has already:
@@ -157,6 +165,21 @@ Print a one-paragraph summary:
 > Brief written to `data/morning-queue.md`. Processed <total> emails across <N> accounts; auto-deleted <X>, staged <Y> drafts, captured <Z> tasks, proposed <W> new rules. <Warnings if any.>
 
 If there are pending proposals, remind the user: "Reply with `approve <ids>; decline <ids>` to apply."
+
+### 6. Piggyback issue assignment
+
+If `data/issues/` exists (issue tracker in use) and this was NOT a dry-run:
+
+1. A fresh `data/.last-run-bundle.json` was just written by the orchestrator.
+2. Perform the reasoner pass per `.claude/commands/issues/_reasoner-pass.md` using that
+   bundle's `survivors` + `heuristicCandidates` (no re-fetch).
+3. Apply via `scripts/issue-apply.js` (pass the bundle's heuristic-candidate msgids as
+   `heuristicMsgids`); soft-delete the returned `toTrash` msgids (**soft-delete only**).
+4. Update `data/issue-assignment-state.json`.
+5. Add one line to the brief summary: "Issues: N open, M new, K heuristic deletes rescued."
+
+This keeps the issue graph current as a side effect of the morning brief. Standalone
+`/issues` remains available for mid-day refresh.
 
 ## Notes
 

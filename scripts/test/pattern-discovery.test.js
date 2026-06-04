@@ -297,3 +297,30 @@ describe("discoverScamPatterns — over-broad single-word patterns", () => {
     });
   }
 });
+
+describe("discoverAutoTrash — skips senders already in alwaysDelete", () => {
+  it("does not re-propose an email-typed alwaysDelete sender", () => {
+    const history = { "personal:theathletic@e1.theathletic.com": { deletedCount: 9, hasListUnsubscribe: true, lastDeletedAt: "..." } };
+    const accounts = [{
+      id: "personal", neverDelete: [], prioritySenders: [],
+      alwaysDelete: [{ type: "email", value: "theathletic@e1.theathletic.com", label: "the athletic" }],
+    }];
+    const proposals = discoverAutoTrash(history, accounts, [], { now: "2026-05-24T00:00:00Z" });
+    assert.equal(proposals.length, 0);
+  });
+  it("does not re-propose when a domain-typed alwaysDelete rule covers the sender", () => {
+    const history = { "personal:promos@bigbox.com": { deletedCount: 7, hasListUnsubscribe: true, lastDeletedAt: "..." } };
+    const accounts = [{
+      id: "personal", neverDelete: [], prioritySenders: [],
+      alwaysDelete: [{ type: "domain", value: "bigbox.com", label: "bigbox" }],
+    }];
+    const proposals = discoverAutoTrash(history, accounts, [], { now: "2026-05-24T00:00:00Z" });
+    assert.equal(proposals.length, 0);
+  });
+  it("still proposes a sender not covered by alwaysDelete", () => {
+    const history = { "personal:new@sender.com": { deletedCount: 6, hasListUnsubscribe: true, lastDeletedAt: "..." } };
+    const accounts = [{ id: "personal", neverDelete: [], prioritySenders: [], alwaysDelete: [{ type: "email", value: "other@x.com" }] }];
+    const proposals = discoverAutoTrash(history, accounts, [], { now: "2026-05-24T00:00:00Z" });
+    assert.equal(proposals.length, 1);
+  });
+});

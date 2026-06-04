@@ -265,6 +265,8 @@ function classifyWithFixtures(emailBatch, account, typeConfig) {
     accountType: account.accountType,
     categories: {},
     deletionCandidates: [],
+    explicitDeletions: [],
+    heuristicDeletions: [],
   };
   for (const cat of categories) {
     result.categories[cat.id] = { label: cat.label, hidden: cat.hidden || false, emails: [] };
@@ -352,7 +354,7 @@ function classifyWithAccount(emails, account, typeConfig) {
   const scamPatterns = account.scamPatterns || [];
   const deletionCategoryIds = new Set(policy.categories);
 
-  const result = { categories: {}, deletionCandidates: [] };
+  const result = { categories: {}, deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
   for (const cat of categories) result.categories[cat.id] = { label: cat.label, emails: [] };
 
   for (const email of emails) {
@@ -366,10 +368,12 @@ function classifyWithAccount(emails, account, typeConfig) {
     result.categories[categoryId].emails.push(email);
     if (forceDelete) {
       result.deletionCandidates.push(email);
+      result.explicitDeletions.push(email);
     } else if (isProtected) {
       // protected
     } else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns || [])) {
       result.deletionCandidates.push(email);
+      result.heuristicDeletions.push(email);
     }
   }
   return result;
@@ -541,5 +545,61 @@ describe("classify-emails — scamPatterns force into deletion", () => {
     ];
     const result = classifyWithAccount(emails, account, businessTypeConfig);
     assert.equal(result.deletionCandidates.length, 0);
+  });
+});
+
+describe("classify — explicit vs heuristic deletion tagging", () => {
+  const account = {
+    id: "brickellpay",
+    name: "Brickell Pay",
+    accountType: "business",
+    provider: "outlook",
+    myEmail: "ben@brickellpay.com",
+    prioritySenders: [],
+    urgencyRules: { flags: [] },
+    downrank: [],
+    alwaysDelete: [{ type: "name", value: "SpamCo", label: "spam" }],
+    neverDelete: [],
+    scamPatterns: [{ label: "AR scam", subjectAll: ["annual report"], senderAllowlist: ["sunbiz.org"], action: "delete" }],
+  };
+  const typeConfig = {
+    triageCategories: [
+      { id: "action", label: "ACTION", actionable: true },
+      { id: "fyi", label: "FYI" },
+      { id: "ignore", label: "IGNORE", hidden: true },
+    ],
+    downrankDefaults: [],
+    bulkSignalThreshold: 1,
+    deletionPolicy: { categories: ["ignore"], patterns: ["limited time offer"], neverDelete: [], alwaysDelete: [] },
+  };
+
+  it("tags alwaysDelete hits as explicit", () => {
+    const emails = [{ id: "e1", fromName: "SpamCo", from: "x@spamco.com", subject: "buy now" }];
+    const r = classifyWithAccount(emails, account, typeConfig);
+    assert.equal(r.explicitDeletions.length, 1);
+    assert.equal(r.heuristicDeletions.length, 0);
+    assert.equal(r.deletionCandidates.length, 1);
+  });
+
+  it("tags scamPattern hits as explicit", () => {
+    const emails = [{ id: "e1", from: "x@flcorpfiling.com", fromName: "Filing Co", subject: "Annual Report Notice" }];
+    const r = classifyWithAccount(emails, account, typeConfig);
+    assert.equal(r.explicitDeletions.length, 1);
+    assert.equal(r.heuristicDeletions.length, 0);
+  });
+
+  it("tags bulk-signal / pattern deletions as heuristic", () => {
+    const emails = [{ id: "e1", from: "noreply@news.example.com", fromName: "Newsletter", subject: "limited time offer", hasListUnsubscribe: true }];
+    const r = classifyWithAccount(emails, account, typeConfig);
+    assert.equal(r.explicitDeletions.length, 0);
+    assert.equal(r.heuristicDeletions.length, 1);
+    assert.equal(r.deletionCandidates.length, 1);
+  });
+
+  it("keeps survivors out of both deletion lists", () => {
+    const emails = [{ id: "e1", from: "partner@brickellpay.com", fromName: "Partner", subject: "Re: contract question" }];
+    const r = classifyWithAccount(emails, account, typeConfig);
+    assert.equal(r.explicitDeletions.length, 0);
+    assert.equal(r.heuristicDeletions.length, 0);
   });
 });
