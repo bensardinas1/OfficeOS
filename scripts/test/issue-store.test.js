@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import {
   slugify, parseIssueFile, serializeIssue,
   loadIssues, loadProvisional, findByAlias, listByStatus,
+  createIssue, saveIssue, markDone, snoozeIssue, mergeIssues, graduateProvisional,
+  loadAssignmentState, saveAssignmentState,
 } from "../issue-store.js";
+import { existsSync, readFileSync } from "node:fs";
 
 let tmpDir, issuesDir;
 beforeEach(() => {
@@ -88,4 +91,83 @@ describe("listByStatus", () => {
     { id: "a", status: "open" }, { id: "b", status: "snoozed" }, { id: "c", status: "open" },
   ];
   it("filters by status", () => assert.deepEqual(listByStatus(issues, "open").map(i => i.id), ["a", "c"]));
+});
+
+describe("createIssue / saveIssue", () => {
+  it("creates a real issue file with defaults", () => {
+    const issue = createIssue(issuesDir, { title: "Path Peptides", aliases: ["pp"], accounts: ["brickellpay"] }, { now: "2026-05-27" });
+    assert.equal(issue.id, "path-peptides");
+    assert.equal(issue.status, "open");
+    assert.equal(issue._provisional, false);
+    assert.ok(existsSync(join(issuesDir, "path-peptides.md")));
+  });
+  it("creates a provisional issue in the provisional subdir", () => {
+    const issue = createIssue(issuesDir, { title: "One Off", accounts: ["personal"] }, { provisional: true, now: "2026-05-27" });
+    assert.equal(issue._provisional, true);
+    assert.ok(existsSync(join(issuesDir, "provisional", "one-off.md")));
+  });
+  it("saveIssue round-trips edits", () => {
+    const issue = createIssue(issuesDir, { title: "MS Billing", aliases: ["ms"] }, { now: "2026-05-27" });
+    issue.next_action = "Update card";
+    saveIssue(issue);
+    const reloaded = loadIssues(issuesDir).find(i => i.id === "ms-billing");
+    assert.equal(reloaded.next_action, "Update card");
+  });
+});
+
+describe("markDone / snoozeIssue", () => {
+  it("markDone sets status done", () => {
+    const issue = createIssue(issuesDir, { title: "X" }, { now: "2026-05-27" });
+    markDone(issue);
+    assert.equal(loadIssues(issuesDir).find(i => i.id === "x").status, "done");
+  });
+  it("snoozeIssue sets status + snooze_until", () => {
+    const issue = createIssue(issuesDir, { title: "Y" }, { now: "2026-05-27" });
+    snoozeIssue(issue, "2026-06-01");
+    const r = loadIssues(issuesDir).find(i => i.id === "y");
+    assert.equal(r.status, "snoozed");
+    assert.equal(r.snooze_until, "2026-06-01");
+  });
+});
+
+describe("mergeIssues", () => {
+  it("folds source into target, dedupes linked msgids, removes source file", () => {
+    const target = createIssue(issuesDir, { title: "Path Peptides", aliases: ["pp"] }, { now: "2026-05-27" });
+    target.body = "## Linked messages\n- msgid:a — x\n- msgid:b — y";
+    saveIssue(target);
+    const source = createIssue(issuesDir, { title: "Peptides Thread", aliases: ["pep"] }, { now: "2026-05-27" });
+    source.body = "## Linked messages\n- msgid:b — y\n- msgid:c — z";
+    saveIssue(source);
+
+    const merged = mergeIssues(target, source);
+    assert.equal(merged.aliases.includes("pep"), true, "aliases combined");
+    const msgids = (merged.body.match(/msgid:\w/g) || []);
+    assert.equal(new Set(msgids).size, msgids.length, "no duplicate msgids");
+    assert.ok(msgids.includes("msgid:c"));
+    assert.equal(existsSync(source._path), false, "source file removed");
+  });
+});
+
+describe("graduateProvisional", () => {
+  it("moves a provisional file to the top level", () => {
+    createIssue(issuesDir, { title: "Maybe Real", aliases: ["mr"] }, { provisional: true, now: "2026-05-27" });
+    const graduated = graduateProvisional(issuesDir, "maybe-real");
+    assert.equal(graduated._provisional, false);
+    assert.ok(existsSync(join(issuesDir, "maybe-real.md")));
+    assert.equal(existsSync(join(issuesDir, "provisional", "maybe-real.md")), false);
+  });
+  it("returns null when the provisional slug is absent", () => {
+    assert.equal(graduateProvisional(issuesDir, "ghost"), null);
+  });
+});
+
+describe("assignment state", () => {
+  it("returns default when file missing", () => {
+    assert.deepEqual(loadAssignmentState(join(tmpDir, "state.json")), { lastAssignedAt: {} });
+  });
+  it("round-trips", () => {
+    const p = join(tmpDir, "state.json");
+    saveAssignmentState(p, { lastAssignedAt: { brickellpay: "2026-05-27T00:00:00Z" } });
+    assert.equal(loadAssignmentState(p).lastAssignedAt.brickellpay, "2026-05-27T00:00:00Z");
+  });
 });
