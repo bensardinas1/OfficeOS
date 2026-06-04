@@ -240,6 +240,8 @@ export function classify(emails, accountId) {
     accountType: typeKey,
     categories: {},
     deletionCandidates: [],
+    explicitDeletions: [],
+    heuristicDeletions: [],
   };
 
   for (const cat of categories) {
@@ -277,17 +279,19 @@ export function classify(emails, accountId) {
     }
     result.categories[categoryId].emails.push(email);
 
-    // Force into deletion candidates
+    // Force into deletion candidates — explicit (deliberate config rule)
     if (forceDelete) {
       result.deletionCandidates.push(email);
+      result.explicitDeletions.push(email);
     }
     // neverDelete protects against pattern/category-based deletion
     else if (isProtected) {
       // skip — protected sender
     }
-    // Standard category/pattern-based deletion
+    // Standard category/pattern-based deletion — heuristic (guessed)
     else if (deletionCategoryIds.has(categoryId) || matchesDeletionPattern(email, policy.patterns || [])) {
       result.deletionCandidates.push(email);
+      result.heuristicDeletions.push(email);
     }
   }
 
