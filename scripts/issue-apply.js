@@ -112,3 +112,20 @@ export function applyReasonerOutput(records, emailsById, { issuesDir, now, heuri
 
   return report;
 }
+
+// CLI entrypoint — Windows-safe guard (NOT import.meta.url === file://${argv[1]}).
+// Reads JSON from stdin: { records, emailsById, heuristicMsgids?, now }
+// Arg 1: issuesDir (default "data/issues"). Prints the report JSON to stdout.
+if (process.argv[1] && process.argv[1].endsWith("issue-apply.js")) {
+  const issuesDirArg = process.argv[2] || "data/issues";
+  let input = "";
+  process.stdin.setEncoding("utf-8");
+  for await (const chunk of process.stdin) input += chunk;
+  const { records = [], emailsById = {}, heuristicMsgids = [], now } = JSON.parse(input || "{}");
+  const report = applyReasonerOutput(records, emailsById, {
+    issuesDir: issuesDirArg,
+    now: now || new Date().toISOString().slice(0, 10),
+    heuristicMsgids,
+  });
+  process.stdout.write(JSON.stringify(report, null, 2));
+}

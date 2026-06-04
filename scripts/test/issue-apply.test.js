@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { join as joinPath } from "node:path";
 import { applyReasonerOutput } from "../issue-apply.js";
 import { loadIssues, loadProvisional, createIssue, saveIssue } from "../issue-store.js";
 import { sampleEmailsById, seaaReasonerOutput } from "./fixtures/issues.js";
@@ -101,5 +103,24 @@ describe("applyReasonerOutput — rescued (I3)", () => {
     ];
     const out = applyReasonerOutput(records, sampleEmailsById, { issuesDir, now: "2026-05-27", heuristicMsgids: ["m-neal"] });
     assert.deepEqual(out.rescued, ["m-neal"]);
+  });
+});
+
+describe("issue-apply CLI entrypoint", () => {
+  it("reads stdin JSON and prints a report, creating issues on disk", () => {
+    const payload = JSON.stringify({
+      records: [{ msgid: "m-oneoff", verdict: "keep", issue: "NEW:Cli Smoke Topic", reason: "x", next_action_update: "", waiting_on_update: "you" }],
+      emailsById: { "m-oneoff": sampleEmailsById["m-oneoff"] },
+      heuristicMsgids: [],
+      now: "2026-05-27",
+    });
+    // Resolve the real script path relative to repo root (cwd during npm test is repo root).
+    const scriptPath = joinPath(process.cwd(), "scripts", "issue-apply.js");
+    const out = execFileSync("node", [scriptPath, issuesDir], { input: payload, encoding: "utf-8" });
+    const report = JSON.parse(out);
+    assert.ok(Array.isArray(report.quarantined));
+    // single-message NEW with empty next_action → provisional
+    assert.ok(report.quarantined.includes("cli-smoke-topic"));
+    assert.ok(loadProvisional(issuesDir).find(i => i.id === "cli-smoke-topic"));
   });
 });

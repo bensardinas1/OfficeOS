@@ -40,7 +40,10 @@ so heuristic guesses are handed to the reasoner instead of trashed outright:
     node scripts/morning-brief.js $ARGUMENTS --defer-heuristic-deletes
 
 ```bash
+# Default (issue tracker not in use):
 node scripts/morning-brief.js $ARGUMENTS
+# If data/issues/ exists (issue tracker in use), append the flag:
+node scripts/morning-brief.js $ARGUMENTS --defer-heuristic-deletes
 ```
 
 Capture stdout as JSON. The orchestrator has already:
