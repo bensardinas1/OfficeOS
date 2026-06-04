@@ -29,8 +29,9 @@ function appendLinkedMessage(issue, email) {
   }
 }
 
-export function applyReasonerOutput(records, emailsById, { issuesDir, now }) {
+export function applyReasonerOutput(records, emailsById, { issuesDir, now, heuristicMsgids = [] }) {
   const report = { created: [], updated: [], quarantined: [], rescued: [], toTrash: [], noIssue: [] };
+  const heuristicSet = new Set(heuristicMsgids);
 
   const realIssues = loadIssues(issuesDir);
   const provIssues = loadProvisional(issuesDir);
@@ -52,8 +53,12 @@ export function applyReasonerOutput(records, emailsById, { issuesDir, now }) {
   for (const rec of records) {
     const email = emailsById[rec.msgid];
     if (rec.verdict === "trash") {
-      report.toTrash.push(rec.msgid);
+      if (!report.toTrash.includes(rec.msgid)) report.toTrash.push(rec.msgid);
       continue;
+    }
+    // keep beyond this point
+    if (heuristicSet.has(rec.msgid) && !report.rescued.includes(rec.msgid)) {
+      report.rescued.push(rec.msgid);
     }
     if (rec.issue == null) { report.noIssue.push(rec.msgid); continue; }
     if (rec.issue.startsWith("NEW:")) continue; // handled below
@@ -69,14 +74,31 @@ export function applyReasonerOutput(records, emailsById, { issuesDir, now }) {
 
   // Create the grouped NEW issues.
   for (const [slug, group] of newGroups) {
+    const existing = byId.get(slug);
+    if (existing) {
+      // Slug already exists (prior run created it) — append, don't overwrite.
+      const groupEmails = group.recs.map(r => emailsById[r.msgid]).filter(Boolean);
+      for (const e of groupEmails) appendLinkedMessage(existing, e);
+      const fwa = group.recs.find(r => r.next_action_update);
+      if (fwa) existing.next_action = fwa.next_action_update;
+      const fwo = group.recs.find(r => r.waiting_on_update);
+      if (fwo) existing.waiting_on = fwo.waiting_on_update;
+      existing.last_activity = now;
+      saveIssue(existing);
+      if (!report.updated.includes(existing.id)) report.updated.push(existing.id);
+      continue;
+    }
     const emails = group.recs.map(r => emailsById[r.msgid]).filter(Boolean);
     const participants = [...new Set(emails.map(e => `${e.fromName || e.from} <${e.from}>`))];
     const accounts = [...new Set(emails.map(e => e.account).filter(Boolean))];
     const firstWithAction = group.recs.find(r => r.next_action_update);
-    const provisional = emails.length < 2 && !firstWithAction;
+    const provisional = group.recs.length < 2 && !firstWithAction;
+    const aliasCandidates = [slug.split("-")[0]].filter(a => a && a !== slug);
+    const existingAliases = new Set([...byId.values()].flatMap(i => (i.aliases || []).map(a => a.toLowerCase())));
+    const aliases = aliasCandidates.filter(a => !existingAliases.has(a.toLowerCase()));
     const issue = createIssue(issuesDir, {
       title: group.title,
-      aliases: [slug.split("-")[0]].filter(a => a && a !== slug),
+      aliases,
       accounts,
       participants,
       next_action: firstWithAction ? firstWithAction.next_action_update : "",

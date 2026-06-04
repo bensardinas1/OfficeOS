@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { applyReasonerOutput } from "../issue-apply.js";
-import { loadIssues, loadProvisional, createIssue } from "../issue-store.js";
+import { loadIssues, loadProvisional, createIssue, saveIssue } from "../issue-store.js";
 import { sampleEmailsById, seaaReasonerOutput } from "./fixtures/issues.js";
 
 let tmpDir, issuesDir;
@@ -61,5 +61,45 @@ describe("applyReasonerOutput — single-message new issue is provisional", () =
     assert.equal(loadIssues(issuesDir).length, 0);
     assert.equal(loadProvisional(issuesDir).length, 1);
     assert.equal(out.quarantined.includes("lonely-topic"), true);
+  });
+});
+
+describe("applyReasonerOutput — re-run idempotency (C1)", () => {
+  it("does not overwrite an existing NEW: issue on re-run; appends instead", () => {
+    // First run creates the issue (2 emails → real).
+    applyReasonerOutput(seaaReasonerOutput, sampleEmailsById, { issuesDir, now: "2026-05-27" });
+    const before = loadIssues(issuesDir).find(i => i.id === "seaa-partner-meetings");
+    // Simulate a decision written into the issue between runs.
+    before.body = before.body.replace("## Decisions made", "## Decisions made\n- 2026-05-27: meet Neal at booth");
+    saveIssue(before);
+    // Second run with the same records.
+    applyReasonerOutput(seaaReasonerOutput, sampleEmailsById, { issuesDir, now: "2026-05-28" });
+    const after = loadIssues(issuesDir).find(i => i.id === "seaa-partner-meetings");
+    assert.match(after.body, /meet Neal at booth/, "prior decision preserved across re-run");
+    // No duplicate msgid lines.
+    const neal = (after.body.match(/msgid:m-neal/g) || []);
+    assert.equal(neal.length, 1, "no duplicate linked-message line");
+  });
+});
+
+describe("applyReasonerOutput — toTrash dedup (I1)", () => {
+  it("dedupes repeated trash msgids", () => {
+    const records = [
+      { msgid: "m-promo1", verdict: "trash", issue: null, reason: "x" },
+      { msgid: "m-promo1", verdict: "trash", issue: null, reason: "x again" },
+    ];
+    const out = applyReasonerOutput(records, sampleEmailsById, { issuesDir, now: "2026-05-27" });
+    assert.deepEqual(out.toTrash, ["m-promo1"]);
+  });
+});
+
+describe("applyReasonerOutput — rescued (I3)", () => {
+  it("marks kept heuristic candidates as rescued", () => {
+    const records = [
+      { msgid: "m-neal", verdict: "keep", issue: "NEW:SEAA Partner Meetings", reason: "x", next_action_update: "reply", waiting_on_update: "you" },
+      { msgid: "m-brad", verdict: "keep", issue: "NEW:SEAA Partner Meetings", reason: "y", next_action_update: "reply", waiting_on_update: "you" },
+    ];
+    const out = applyReasonerOutput(records, sampleEmailsById, { issuesDir, now: "2026-05-27", heuristicMsgids: ["m-neal"] });
+    assert.deepEqual(out.rescued, ["m-neal"]);
   });
 });
