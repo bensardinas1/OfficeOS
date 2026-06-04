@@ -265,6 +265,8 @@ function classifyWithFixtures(emailBatch, account, typeConfig) {
     accountType: account.accountType,
     categories: {},
     deletionCandidates: [],
+    explicitDeletions: [],
+    heuristicDeletions: [],
   };
   for (const cat of categories) {
     result.categories[cat.id] = { label: cat.label, hidden: cat.hidden || false, emails: [] };
