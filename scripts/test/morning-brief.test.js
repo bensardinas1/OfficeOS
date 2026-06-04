@@ -71,7 +71,8 @@ describe("runMorningBrief — orchestration", () => {
         tasksPath: join(dataDir, "tasks.md"),
         triageLogPath: join(dataDir, "triage-log.md"),
         lastRunStatePath: join(dataDir, "last-run-state.json"),
-        draftsIndexPath: join(dataDir, "drafts-index.json")
+        draftsIndexPath: join(dataDir, "drafts-index.json"),
+        lastRunBundlePath: join(dataDir, ".last-run-bundle.json")
       },
       accounts: sampleAccounts,
       typeConfigs: sampleTypeConfig,
