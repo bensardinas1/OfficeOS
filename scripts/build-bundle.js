@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWrite } from "./fs-utils.js";
 import { groupForReasoning } from "./collapse.js";
+import { proposalId, isPendingProposal } from "./pattern-discovery.js";
 
 export async function collectPages(fetchPage, { sinceMs, dateOf }) {
   const out = [];
@@ -45,7 +46,7 @@ function compactEmail(e, accountId) {
   };
 }
 
-export async function buildBundle({ since, deps }) {
+export async function buildBundle({ since, deps, pendingProposals = [] }) {
   const { accounts, fetchAllFn, classifyFn, now } = deps;
   const sinceIso = since;
 
@@ -95,6 +96,25 @@ export async function buildBundle({ since, deps }) {
     bundle.push(item);
   }
 
+  // Surface noise-class proposals for alert-batches (never auto-drop).
+  const proposals = [];
+  let counter = pendingProposals.length + 1;
+  for (const group of groups) {
+    if (group.kind !== "alert-batch") continue;
+    const rep = bundle.find(b => b.msgid === group.representativeMsgid);
+    if (!rep) continue;
+    const sender = (rep.from || "").toLowerCase();
+    const target = `companies.${rep.account}.alwaysDelete`;
+    if (!sender || isPendingProposal(pendingProposals, target, sender)) continue;
+    proposals.push({
+      id: proposalId(now, counter++),
+      target,
+      payload: { type: "email", value: sender, label: `${sender} (alert batch ×${group.memberMsgids.length})` },
+      reason: `${group.memberMsgids.length} same-template alerts from ${sender} in window`,
+      proposedAt: now, status: "pending",
+    });
+  }
+
   const fromMembers = toCollapse.length;
   const reasoningUnits = groups.length;
   const funnel = {
@@ -103,7 +123,7 @@ export async function buildBundle({ since, deps }) {
     reasoningUnits, perAccount,
   };
 
-  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings };
+  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals };
 }
 
 function funnelLine(f) {
@@ -193,8 +213,17 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
     classifyFn: (emails, accountId) => classify(emails, accountId),
   };
 
-  const result = await buildBundle({ since, deps });
+  let existingPending = [];
+  try { existingPending = JSON.parse(readFileSync(join(root, "data/proposed-rules.json"), "utf-8")).proposals || []; } catch { /* none */ }
+  const result = await buildBundle({ since, deps, pendingProposals: existingPending });
   const outPath = flags.out || join(root, "data/.last-run-bundle.json");
+  if (result.proposals && result.proposals.length) {
+    const prPath = join(root, "data/proposed-rules.json");
+    let pr = { proposals: [] };
+    try { pr = JSON.parse(readFileSync(prPath, "utf-8")); } catch { /* fresh */ }
+    pr.proposals.push(...result.proposals);
+    atomicWrite(prPath, JSON.stringify(pr, null, 2));
+  }
   atomicWrite(outPath, JSON.stringify(result, null, 2));
   process.stderr.write(funnelLine(result.funnel) + "\n");
   process.stdout.write(JSON.stringify({ funnel: result.funnel, out: outPath }, null, 2));

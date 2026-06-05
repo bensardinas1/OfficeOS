@@ -83,3 +83,34 @@ describe("buildBundle — assembly + funnel", () => {
     assert.equal(al.filter(b => b.group.isRepresentative).length, 1, "exactly one representative in the alert batch");
   });
 });
+
+describe("buildBundle — alert-batch surfaces a noise-class proposal", () => {
+  function depsBatch() {
+    return {
+      accounts: [{ id: "biz", accountType: "business" }],
+      now: "2026-06-05T12:00:00Z",
+      fetchAllFn: async () => Array.from({ length: 5 }, (_, i) => ({
+        id: "al" + i, from: "defender@microsoft.com", fromName: "Defender",
+        subject: `Attack path #${i}`, preview: "alert", receivedAt: "2026-06-05T08:00:00Z", hasListUnsubscribe: false,
+      })),
+      classifyFn: (emails) => {
+        const r = { categories: {}, deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
+        for (const e of emails) { r.deletionCandidates.push(e); r.heuristicDeletions.push(e); }
+        return r;
+      },
+    };
+  }
+  it("proposes an alwaysDelete for the batch sender, with no pre-existing pending proposal", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: [] });
+    assert.ok(Array.isArray(out.proposals));
+    const p = out.proposals.find(p => p.payload && p.payload.value === "defender@microsoft.com");
+    assert.ok(p, "proposed alwaysDelete for the batch sender");
+    assert.equal(p.target, "companies.biz.alwaysDelete");
+    assert.equal(p.status, "pending");
+  });
+  it("does not re-propose when a pending proposal already covers the sender", async () => {
+    const pending = [{ id: "p-1", target: "companies.biz.alwaysDelete", payload: { type: "email", value: "defender@microsoft.com" }, status: "pending" }];
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: pending });
+    assert.equal((out.proposals || []).length, 0);
+  });
+});
