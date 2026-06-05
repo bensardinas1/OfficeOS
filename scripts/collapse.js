@@ -60,11 +60,12 @@ export function groupForReasoning(items) {
   }
 
   // 2. alert-batch: >=THRESHOLD same-sender, same subject-skeleton (not already claimed).
-  const batchKey = (it) => `${fromAddr(it)} ${subjectSkeleton(it.subject)}`;
   const batchBuckets = new Map();
   for (const it of items) {
     if (claimed.has(it.msgid)) continue;
-    const k = batchKey(it);
+    const sk = subjectSkeleton(it.subject);
+    if (!sk || !/[a-z]/.test(sk)) continue; // empty or all-numeric/date skeleton → don't batch; falls through to singleton
+    const k = `${fromAddr(it)} ${sk}`;
     if (!batchBuckets.has(k)) batchBuckets.set(k, []);
     batchBuckets.get(k).push(it);
   }

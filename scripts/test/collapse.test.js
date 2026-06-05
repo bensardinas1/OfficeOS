@@ -63,4 +63,16 @@ describe("groupForReasoning — alert-batch", () => {
     assert.ok(byMsgid["solo"]);
     assert.equal(byMsgid["solo"].isRepresentative, true, "a singleton is its own representative");
   });
+  it("does NOT batch all-numeric/date-only subjects (empty skeleton)", () => {
+    const items = [
+      E({ msgid: "n0", from: "billing@x.com", subject: "1001" }),
+      E({ msgid: "n1", from: "billing@x.com", subject: "1002" }),
+      E({ msgid: "n2", from: "billing@x.com", subject: "2026-05-01" }),
+      E({ msgid: "n3", from: "billing@x.com", subject: "2026-06-30" }),
+    ];
+    const { groups, byMsgid } = groupForReasoning(items);
+    assert.equal(groups.filter(g => g.kind === "alert-batch").length, 0, "empty-skeleton subjects must not batch");
+    // each is its own singleton representative
+    assert.ok(["n0","n1","n2","n3"].every(id => byMsgid[id].isRepresentative === true));
+  });
 });
