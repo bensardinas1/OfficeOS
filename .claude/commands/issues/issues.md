@@ -35,22 +35,34 @@ from the prompt). Assignment state: `data/issue-assignment-state.json`.
 ## Cold-start (bootstrap)
 
 If `data/issues/` has no `*.md` files (real or provisional), this is the first run:
-1. Fetch 14–30 days across all accounts (`fetch-emails.js` / `fetch-gmail.js`).
-2. Classify with `classify-emails.js` to drop explicit-rule noise (cheap pre-filter).
-3. Run the reasoner pass over survivors **only** (see `_reasoner-pass.md`). **Do NOT
-   trash anything on the bootstrap pass** — pass an empty `toTrash` through; this run
-   is read-and-organize only.
-4. Apply via `scripts/issue-apply.js`; everything new lands provisional.
-5. Show the provisional list and tell the user to `graduate` / `merge` / `ignore`.
-6. Write `data/issue-assignment-state.json`.
+1. Build the bundle for a wide window: `node scripts/build-bundle.js --since 30d --out data/.last-run-bundle.json`.
+   This fetches (paginated, full window), classifies, collapses reasoning units,
+   and prints the funnel to stderr. **It trashes nothing.**
+2. Read `data/.last-run-bundle.json` → reason over the bundle per
+   `_reasoner-pass.md` (judge representatives once; emit per-member records).
+3. Apply with the bootstrap flag so **everything new lands provisional**:
+   `echo '<{records,emailsById,heuristicMsgids,now}>' | node scripts/issue-apply.js data/issues --force-provisional`.
+   (`emailsById` comes from the bundle; `heuristicMsgids` = the msgids of bundle
+   items tagged `heuristic-delete-candidate`.)
+4. Show the provisional list (via `loadProvisional`) and tell the user to
+   `graduate` / `merge` / `ignore`.
+5. Write `data/issue-assignment-state.json` (`saveAssignmentState`).
 
 ## Normal run (assignment)
+
+> Steady-state promotion: outside bootstrap, `issue-apply.js` (without
+> `--force-provisional`) promotes a NEW topic to a **real** issue when it has
+> >=2 linked emails or a next_action. Bootstrap forces everything provisional
+> for the one-time sweep; normal runs trust the heuristic. (This reconciles the
+> earlier "everything lands provisional" wording — that is the bootstrap rule,
+> not the steady-state rule.)
 
 Two entry paths (cadence C):
 - **Piggyback**: if a fresh `data/.last-run-bundle.json` exists (generatedAt within the
   last ~15 min), use its `survivors` + `heuristicCandidates` — no re-fetch.
-- **On-demand / refresh**: read `issue-assignment-state.json`, fetch each account's
-  delta since `lastAssignedAt`, classify, build the bundle yourself.
+- **On-demand / refresh**: if a fresh `data/.last-run-bundle.json` exists, use it;
+  otherwise run `node scripts/build-bundle.js --since <delta>` (delta = time since
+  `lastAssignedAt` for the accounts), then read the bundle.
 
 Then:
 1. Build the issue index from `loadIssues` (open only).

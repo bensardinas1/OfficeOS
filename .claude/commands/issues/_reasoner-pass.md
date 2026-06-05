@@ -16,6 +16,14 @@
 
 Reason about the *content*, not just the sender. Produce one record per email:
 
+**Collapsed groups.** Some bundle items carry a `group` field
+(`{ id, kind, isRepresentative, size }`). When `kind` is `exact-dup` or
+`alert-batch`, judge ONLY the representative (`isRepresentative: true`) once,
+then emit the SAME verdict/issue/next_action for every member msgid in that
+group. You do not need to re-read non-representative members — they are
+identical or near-identical by construction. This is how cost stays low without
+dropping data: one judgment, applied to all members; every member is preserved.
+
 ```json
 {
   "msgid": "<id>",
