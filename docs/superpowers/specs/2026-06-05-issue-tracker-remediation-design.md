@@ -90,11 +90,11 @@ For each account, concurrently: paginated fetch → `classify-emails.js` → der
   "funnel": {
     "fetched": 540,
     "explicitDropped": 310,
-    "heuristicCandidates": 82,
     "survivors": 135,
-    "collapsed": { "groups": 78, "fromMembers": 135, "savedJudgments": 57 },
+    "heuristicCandidates": 95,
+    "collapsed": { "groups": 78, "fromMembers": 230, "savedJudgments": 152 },
     "reasoningUnits": 78,
-    "perAccount": { "brickellpay": { "fetched": 0, "...": 0 } }
+    "perAccount": { "brickellpay": { "fetched": 200, "explicitDropped": 120, "survivors": 50, "heuristicCandidates": 30 } }
   }
 }
 ```
@@ -103,9 +103,11 @@ For each account, concurrently: paginated fetch → `classify-emails.js` → der
 ### The funnel (cost-as-effectiveness instrument)
 Printed compact to stdout every run:
 ```
-fetched 540 → explicit-dropped 310 → 135 survivors → collapse 135→78 units → reasoned 78
+fetched 540 → explicit-dropped 310 → 230 to-reason (135 survivors + 95 candidates) → collapse 230→78 units → reasoned 78
 ```
-Counts must reconcile: `fetched = explicitDropped + heuristicCandidates + survivors + (anything neither)`. The load test reads this line as the design-effectiveness verdict.
+**Collapse spans BOTH survivors and heuristic-candidates** — the reasoner judges both (survivors → assign-to-issue; candidates → rescue-or-confirm-noise), and identical batches occur in both populations (e.g., the 12 Defender alerts are heuristic-candidates). So `reasoningUnits` = the post-collapse total reasoner judgments across both populations, and `funnel.collapsed.fromMembers` / `savedJudgments` count across both.
+
+Reconciliation guardrail: `fetched = explicitDropped + survivors + heuristicCandidates` (everything fetched is either explicitly dropped, kept as a survivor, or deferred to the reasoner as a heuristic candidate; protected senders count as survivors). The load test reads the funnel as the design-effectiveness verdict.
 
 ## collapse.js — grouping rules (conservative)
 
