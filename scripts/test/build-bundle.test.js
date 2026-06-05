@@ -56,6 +56,24 @@ describe("buildBundle — assembly + funnel", () => {
     assert.ok(f.reasoningUnits < f.survivors + f.heuristicCandidates, "collapse reduced reasoning units");
   });
 
+  it("warns and continues when one account's fetch throws (no full abort)", async () => {
+    const d = {
+      accounts: [{ id: "biz", accountType: "business" }, { id: "personal", accountType: "personal" }],
+      now: "2026-06-05T12:00:00Z",
+      fetchAllFn: async (accountId) => {
+        if (accountId === "biz") throw new Error("token expired");
+        return [{ id: "p1", from: "n@y.com", fromName: "N", subject: "news", preview: "x", receivedAt: "2026-06-05T07:00:00Z", hasListUnsubscribe: false }];
+      },
+      classifyFn: () => ({ categories: {}, deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] }),
+    };
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: d });
+    assert.equal(out.warnings.length, 1);
+    assert.match(out.warnings[0], /biz.*token expired/);
+    // personal still processed → p1 a survivor in the bundle
+    assert.ok(out.bundle.find(b => b.msgid === "p1"), "surviving account still built");
+    assert.equal(out.funnel.fetched, 1, "only the succeeding account counted");
+  });
+
   it("tags bundle items survivor vs heuristic-delete-candidate and marks representatives", async () => {
     const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: deps() });
     const k1 = out.bundle.find(b => b.msgid === "k1");

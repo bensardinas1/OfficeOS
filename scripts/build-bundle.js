@@ -54,11 +54,17 @@ export async function buildBundle({ since, deps }) {
   const perAccount = {};
   let fetched = 0, explicitDropped = 0, survivors = 0, heuristicCandidates = 0;
 
-  const results = await Promise.all(accounts.map(async (acct) => {
+  const warnings = [];
+  const settled = await Promise.allSettled(accounts.map(async (acct) => {
     const emails = await fetchAllFn(acct.id, sinceIso);
     const r = classifyFn(emails, acct.id);
     return { acct, emails, r };
   }));
+  const results = [];
+  settled.forEach((s, i) => {
+    if (s.status === "fulfilled") results.push(s.value);
+    else warnings.push(`[${accounts[i].id}] fetch/classify failed: ${s.reason?.message || s.reason}`);
+  });
 
   const toCollapse = [];
   for (const { acct, emails, r } of results) {
@@ -97,7 +103,7 @@ export async function buildBundle({ since, deps }) {
     reasoningUnits, perAccount,
   };
 
-  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel };
+  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings };
 }
 
 function funnelLine(f) {
@@ -123,6 +129,7 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const root = join(__dirname, "..");
   const nowIso = new Date().toISOString();
+  if (!flags.since) process.stderr.write("build-bundle: --since not specified; defaulting to 30d\n");
   const since = resolveSince(flags.since || "30d", nowIso);
   const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
   const wanted = flags.accounts ? new Set(flags.accounts.split(",")) : null;
@@ -138,6 +145,8 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
   async function fetchAllOutlook(accountId) {
     const client = await buildGraphClient(accountId);
     return collectPages(async ({ token }) => {
+      // When paginating, `token` is the full @odata.nextLink URL; Graph's client.api()
+      // accepts an absolute URL and reuses the server-encoded select/orderby/top.
       const req = token
         ? client.api(token)
         : client.api("/me/mailFolders/inbox/messages").top(100)
@@ -153,7 +162,10 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
     }, { sinceMs, dateOf: e => e.receivedAt });
   }
 
-  async function fetchAllGmail() {
+  // TODO(multi-gmail): buildGmailClient() is not yet account-scoped (single token
+  // cache). accountId is threaded here for contract-correctness; when a second
+  // Gmail account is added, buildGmailClient must take accountId like graph-client.
+  async function fetchAllGmail(accountId) {
     const gmail = await buildGmailClient();
     const afterSec = Math.floor(sinceMs / 1000);
     const ids = await collectPages(async ({ token }) => {
@@ -161,6 +173,8 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
       return { items: (res.data.messages || []).map(m => ({ id: m.id, receivedAt: new Date().toISOString() })), nextToken: res.data.nextPageToken || null };
     }, { sinceMs: 0, dateOf: () => new Date().toISOString() });
     const out = [];
+    // TODO(perf): sequential per-message hydration; replace with gmail.batch() for
+    // windows with many messages (the load test will show if this is painful).
     for (const { id } of ids) {
       const m = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: ["From", "Subject", "Date"] });
       const h = Object.fromEntries((m.data.payload?.headers || []).map(x => [x.name, x.value]));
@@ -174,7 +188,7 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
     now: nowIso,
     fetchAllFn: async (accountId) => {
       const acct = accounts.find(a => a.id === accountId);
-      return acct.provider === "gmail" ? fetchAllGmail() : fetchAllOutlook(accountId);
+      return acct.provider === "gmail" ? fetchAllGmail(accountId) : fetchAllOutlook(accountId);
     },
     classifyFn: (emails, accountId) => classify(emails, accountId),
   };
