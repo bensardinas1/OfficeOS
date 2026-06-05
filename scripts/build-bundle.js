@@ -20,11 +20,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWrite } from "./fs-utils.js";
 import { groupForReasoning } from "./collapse.js";
-import { proposalId, isPendingProposal } from "./pattern-discovery.js";
+import { proposalId, isPendingProposal, nextCounterFor } from "./pattern-discovery.js";
 
 export async function collectPages(fetchPage, { sinceMs, dateOf }) {
   const out = [];
   let token = null;
+  // NOTE: assumes pages arrive newest-first (descending date). Once a page
+  // contains an item older than `since`, all later pages are older, so we stop.
+  // Callers whose API does NOT guarantee descending order must pass sinceMs: 0
+  // and filter elsewhere (the Gmail path does this — server-side `after:` windows).
   for (;;) {
     const { items, nextToken } = await fetchPage({ token });
     let sawOld = false;
@@ -98,7 +102,7 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
 
   // Surface noise-class proposals for alert-batches (never auto-drop).
   const proposals = [];
-  let counter = pendingProposals.length + 1;
+  let counter = nextCounterFor(pendingProposals, (now || "").slice(0, 10));
   for (const group of groups) {
     if (group.kind !== "alert-batch") continue;
     const rep = bundle.find(b => b.msgid === group.representativeMsgid);
@@ -170,13 +174,14 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
       const req = token
         ? client.api(token)
         : client.api("/me/mailFolders/inbox/messages").top(100)
-            .select("id,subject,from,receivedDateTime,bodyPreview")
+            .select("id,subject,from,receivedDateTime,bodyPreview,internetMessageHeaders")
             .orderby("receivedDateTime desc");
       const res = await req.get();
       const items = (res.value || []).map(m => ({
         id: m.id, subject: m.subject,
         from: m.from?.emailAddress?.address, fromName: m.from?.emailAddress?.name,
         receivedAt: m.receivedDateTime, preview: m.bodyPreview,
+        hasListUnsubscribe: (m.internetMessageHeaders || []).some(h => (h.name || "").toLowerCase() === "list-unsubscribe"),
       }));
       return { items, nextToken: res["@odata.nextLink"] || null };
     }, { sinceMs, dateOf: e => e.receivedAt });
@@ -196,9 +201,9 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
     // TODO(perf): sequential per-message hydration; replace with gmail.batch() for
     // windows with many messages (the load test will show if this is painful).
     for (const { id } of ids) {
-      const m = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: ["From", "Subject", "Date"] });
+      const m = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe"] });
       const h = Object.fromEntries((m.data.payload?.headers || []).map(x => [x.name, x.value]));
-      out.push({ id, subject: h.Subject, from: (h.From || "").replace(/.*<(.+)>.*/, "$1"), fromName: (h.From || "").replace(/<.*>/, "").trim(), receivedAt: new Date(Number(m.data.internalDate)).toISOString(), preview: m.data.snippet });
+      out.push({ id, subject: h.Subject, from: (h.From || "").replace(/.*<(.+)>.*/, "$1"), fromName: (h.From || "").replace(/<.*>/, "").trim(), receivedAt: new Date(Number(m.data.internalDate)).toISOString(), preview: m.data.snippet, hasListUnsubscribe: !!h["List-Unsubscribe"] });
     }
     return out;
   }

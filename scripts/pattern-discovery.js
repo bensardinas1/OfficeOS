@@ -58,7 +58,7 @@ function findAccount(accounts, accountId) {
  * counter values to each caller. See the morning-brief orchestrator (Task 7)
  * for the accumulator pattern.
  */
-function nextCounterFor(proposals, datePart) {
+export function nextCounterFor(proposals, datePart) {
   let max = 0;
   const pattern = new RegExp(`^p-${datePart}-(\\d{3})$`);
   for (const p of proposals) {

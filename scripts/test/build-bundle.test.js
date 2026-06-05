@@ -113,4 +113,13 @@ describe("buildBundle — alert-batch surfaces a noise-class proposal", () => {
     const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: pending });
     assert.equal((out.proposals || []).length, 0);
   });
+  it("assigns proposal IDs that don't collide with same-day existing proposals", async () => {
+    const pending = [
+      { id: "p-2026-06-05-005", target: "companies.biz.scamPatterns", payload: { subjectAll: ["x"] }, status: "approved" },
+    ];
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: pending });
+    const p = out.proposals.find(p => p.payload.value === "defender@microsoft.com");
+    assert.ok(p, "proposal created");
+    assert.equal(p.id, "p-2026-06-05-006", "next id continues from same-day max (006), not length+1 (002)");
+  });
 });
