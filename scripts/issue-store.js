@@ -162,6 +162,33 @@ export function graduateProvisional(issuesDir, slug) {
   return issue;
 }
 
+/**
+ * Resolve an alias against BOTH real and provisional issues. Real wins on
+ * collision. Returns the issue object (with _provisional) or null.
+ */
+export function findIssue(issuesDir, alias) {
+  const realHit = findByAlias(loadIssues(issuesDir), alias);
+  if (realHit) return realHit;
+  return findByAlias(loadProvisional(issuesDir), alias);
+}
+
+/**
+ * drafts-index: map "<accountId>:<sourceMsgid>" -> { draftId, issue, preview, savedAt }.
+ * Prevents re-drafting the same source email on overlapping windows.
+ */
+export function loadDraftsIndex(path) {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+export function saveDraftsIndex(path, index) {
+  atomicWrite(path, JSON.stringify(index, null, 2));
+}
+
 export function loadAssignmentState(path) {
   if (!existsSync(path)) return { lastAssignedAt: {} };
   try {

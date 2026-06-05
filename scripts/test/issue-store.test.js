@@ -8,6 +8,7 @@ import {
   loadIssues, loadProvisional, findByAlias, listByStatus,
   createIssue, saveIssue, markDone, snoozeIssue, mergeIssues, graduateProvisional,
   loadAssignmentState, saveAssignmentState,
+  findIssue, loadDraftsIndex, saveDraftsIndex,
 } from "../issue-store.js";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -194,5 +195,33 @@ describe("assignment state", () => {
     const p = join(tmpDir, "state.json");
     writeFileSync(p, "{ not valid json");
     assert.deepEqual(loadAssignmentState(p), { lastAssignedAt: {} });
+  });
+});
+
+describe("findIssue — unions real + provisional", () => {
+  it("resolves a provisional alias that loadIssues alone would miss", () => {
+    createIssue(issuesDir, { title: "CXN Collective", aliases: ["cxn"] }, { provisional: true, now: "2026-06-05" });
+    const found = findIssue(issuesDir, "cxn");
+    assert.ok(found, "provisional alias resolved");
+    assert.equal(found.id, "cxn-collective");
+    assert.equal(found._provisional, true);
+  });
+  it("prefers a real issue over a provisional on alias collision", () => {
+    createIssue(issuesDir, { title: "Dup Topic", aliases: ["dup"] }, { now: "2026-06-05" });
+    createIssue(issuesDir, { title: "Dup Topic Two", aliases: ["dup"] }, { provisional: true, now: "2026-06-05" });
+    const found = findIssue(issuesDir, "dup");
+    assert.equal(found._provisional, false, "real wins on collision");
+  });
+  it("returns null when nothing matches", () => {
+    assert.equal(findIssue(issuesDir, "nope"), null);
+  });
+});
+
+describe("drafts-index helpers", () => {
+  it("round-trips and returns {} when missing", () => {
+    const p = join(tmpDir, "drafts-index.json");
+    assert.deepEqual(loadDraftsIndex(p), {});
+    saveDraftsIndex(p, { "brickellpay:m1": { draftId: "d1", issue: "nmi", preview: "Hi", savedAt: "2026-06-05" } });
+    assert.equal(loadDraftsIndex(p)["brickellpay:m1"].draftId, "d1");
   });
 });
