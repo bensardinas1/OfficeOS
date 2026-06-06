@@ -29,7 +29,7 @@ function appendLinkedMessage(issue, email) {
   }
 }
 
-export function applyReasonerOutput(records, emailsById, { issuesDir, now, heuristicMsgids = [] }) {
+export function applyReasonerOutput(records, emailsById, { issuesDir, now, heuristicMsgids = [], forceProvisional = false }) {
   const report = { created: [], updated: [], quarantined: [], rescued: [], toTrash: [], noIssue: [] };
   const heuristicSet = new Set(heuristicMsgids);
 
@@ -52,6 +52,9 @@ export function applyReasonerOutput(records, emailsById, { issuesDir, now, heuri
   // Apply trash + existing-issue assignments + null-keeps.
   for (const rec of records) {
     const email = emailsById[rec.msgid];
+    if (rec.verdict !== "trash" && !email) {
+      console.warn(`issue-apply: record msgid ${rec.msgid} not found in emailsById — association skipped`);
+    }
     if (rec.verdict === "trash") {
       if (!report.toTrash.includes(rec.msgid)) report.toTrash.push(rec.msgid);
       continue;
@@ -92,7 +95,7 @@ export function applyReasonerOutput(records, emailsById, { issuesDir, now, heuri
     const participants = [...new Set(emails.map(e => `${e.fromName || e.from} <${e.from}>`))];
     const accounts = [...new Set(emails.map(e => e.account).filter(Boolean))];
     const firstWithAction = group.recs.find(r => r.next_action_update);
-    const provisional = group.recs.length < 2 && !firstWithAction;
+    const provisional = forceProvisional || (group.recs.length < 2 && !firstWithAction);
     const aliasCandidates = [slug.split("-")[0]].filter(a => a && a !== slug);
     const existingAliases = new Set([...byId.values()].flatMap(i => (i.aliases || []).map(a => a.toLowerCase())));
     const aliases = aliasCandidates.filter(a => !existingAliases.has(a.toLowerCase()));
@@ -126,6 +129,12 @@ if (process.argv[1] && process.argv[1].endsWith("issue-apply.js")) {
     issuesDir: issuesDirArg,
     now: now || new Date().toISOString().slice(0, 10),
     heuristicMsgids,
+    forceProvisional: process.argv.includes("--force-provisional"),
   });
-  process.stdout.write(JSON.stringify(report, null, 2));
+  const verbose = process.argv.includes("--verbose");
+  const compact = {
+    created: report.created, updated: report.updated, quarantined: report.quarantined,
+    rescued: report.rescued.length, toTrash: report.toTrash.length, noIssue: report.noIssue.length,
+  };
+  process.stdout.write(JSON.stringify(verbose ? report : compact, null, 2));
 }

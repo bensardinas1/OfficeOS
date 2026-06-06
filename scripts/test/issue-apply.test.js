@@ -106,6 +106,44 @@ describe("applyReasonerOutput — rescued (I3)", () => {
   });
 });
 
+describe("applyReasonerOutput — forceProvisional (F-1 bootstrap)", () => {
+  it("forces a 2-email actioned NEW group to provisional when forceProvisional is set", () => {
+    const records = [
+      { msgid: "m-neal", verdict: "keep", issue: "NEW:SEAA Partner Meetings", reason: "x", next_action_update: "reply", waiting_on_update: "you" },
+      { msgid: "m-brad", verdict: "keep", issue: "NEW:SEAA Partner Meetings", reason: "y", next_action_update: "reply", waiting_on_update: "you" },
+    ];
+    const out = applyReasonerOutput(records, sampleEmailsById, { issuesDir, now: "2026-06-05", forceProvisional: true });
+    assert.equal(loadIssues(issuesDir).find(i => i.id === "seaa-partner-meetings"), undefined, "not real");
+    assert.ok(loadProvisional(issuesDir).find(i => i.id === "seaa-partner-meetings"), "forced provisional");
+    assert.ok(out.quarantined.includes("seaa-partner-meetings"));
+  });
+
+  it("without forceProvisional, the same group lands real (unchanged default)", () => {
+    const records = [
+      { msgid: "m-neal", verdict: "keep", issue: "NEW:SEAA Partner Meetings", reason: "x", next_action_update: "reply", waiting_on_update: "you" },
+      { msgid: "m-brad", verdict: "keep", issue: "NEW:SEAA Partner Meetings", reason: "y", next_action_update: "reply", waiting_on_update: "you" },
+    ];
+    const out = applyReasonerOutput(records, sampleEmailsById, { issuesDir, now: "2026-06-05" });
+    assert.ok(loadIssues(issuesDir).find(i => i.id === "seaa-partner-meetings"), "real by default");
+    assert.ok(out.created.includes("seaa-partner-meetings"));
+  });
+});
+
+describe("applyReasonerOutput — stderr validation", () => {
+  it("warns when a record msgid is absent from emailsById", () => {
+    const warnings = [];
+    const orig = console.warn;
+    console.warn = (m) => warnings.push(m);
+    try {
+      applyReasonerOutput(
+        [{ msgid: "ghost", verdict: "keep", issue: "NEW:Ghost Topic", reason: "x", next_action_update: "", waiting_on_update: "you" }],
+        {}, { issuesDir, now: "2026-06-05" }
+      );
+    } finally { console.warn = orig; }
+    assert.ok(warnings.some(w => /ghost/.test(w) && /emailsById/i.test(w)), "warned about missing email");
+  });
+});
+
 describe("issue-apply CLI entrypoint", () => {
   it("reads stdin JSON and prints a report, creating issues on disk", () => {
     const payload = JSON.stringify({
