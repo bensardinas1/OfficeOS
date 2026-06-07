@@ -318,3 +318,31 @@ describe("buildBundle — confidence tier integration", () => {
     assert.equal(f.fetched, f.explicitDropped + f.survivors + f.heuristicCandidates);
   });
 });
+
+describe("buildBundle — golden: corroborated-bulk batch auto-trashes end-to-end", () => {
+  it("every batch member is in emailsById and has a trash tierRecord; R drops by one group", async () => {
+    const deps = {
+      accounts: [{ id: "biz", accountType: "business", myEmail: "me@brickellpay.com", candidateTier: { mode: "active", scoreCutoff: 3, minGroupSize: 4, auditSamplePercent: 0 } }],
+      now: "2026-06-05T12:00:00Z",
+      fetchAllFn: async () => Array.from({ length: 6 }, (_, i) => ({
+        id: "g" + i, from: "promos@shop.com", fromName: "Shop", subject: `Sale #${i}`, preview: "save now",
+        receivedAt: "2026-06-05T08:00:00Z", hasListUnsubscribe: true, precedence: "bulk", toRecipients: "list@shop.com", ccRecipients: "",
+      })),
+      classifyFn: (emails) => {
+        const r = { categories: {}, deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
+        for (const e of emails) { r.deletionCandidates.push(e); r.heuristicDeletions.push(e); }
+        return r;
+      },
+    };
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps });
+    // all 6 linkable
+    for (let i = 0; i < 6; i++) assert.ok(out.emailsById["g" + i], `g${i} in emailsById`);
+    // one trash record per member, all trash
+    assert.equal(out.tierRecords.length, 6);
+    assert.ok(out.tierRecords.every(r => r.verdict === "trash"));
+    assert.deepEqual(out.tierRecords.map(r => r.msgid).sort(), ["g0", "g1", "g2", "g3", "g4", "g5"]);
+    // R reduced by exactly the one auto-trashed group
+    assert.equal(out.funnel.reasoningUnits, out.funnel.collapsed.groups - 1);
+    assert.equal(out.funnel.tier.trashedGroups, 1);
+  });
+});
