@@ -21,6 +21,8 @@ import { fileURLToPath } from "node:url";
 import { atomicWrite } from "./fs-utils.js";
 import { groupForReasoning } from "./collapse.js";
 import { proposalId, isPendingProposal, nextCounterFor } from "./pattern-discovery.js";
+import { looksAutomated, isProtectedSender, findAccount } from "./sender-guards.js";
+export { looksAutomated, isProtectedSender } from "./sender-guards.js";
 
 export async function collectPages(fetchPage, { sinceMs, dateOf }) {
   const out = [];
@@ -67,48 +69,6 @@ export function mapOutlookMessage(m) {
     toRecipients: recipStr(m.toRecipients),
     ccRecipients: recipStr(m.ccRecipients),
   };
-}
-
-// Local-part patterns that mark a sender as a machine, not a person. Anchored to
-// a word boundary (start, or a . _ + - separator) so "salesnoreply" stays human
-// while "billing.noreply" / "alerts+sec" register as automated.
-const AUTOMATED_LOCALPART =
-  /(?:^|[._+-])(?:no-?reply|do-?not-?reply|notifications?|alerts?|mailer-daemon)(?:$|[._+-])/i;
-
-/**
- * True when a batch sender looks automated — either it carries List-Unsubscribe
- * (already a strong bulk signal) or its local-part matches a machine pattern.
- * Used to keep the alert-batch proposal loop from flagging human threads and
- * processors (which collapse into batches too) as alwaysDelete noise.
- */
-export function looksAutomated(senderEmail, hasListUnsubscribe) {
-  if (hasListUnsubscribe) return true;
-  const local = (String(senderEmail || "").split("@")[0] || "").toLowerCase();
-  return AUTOMATED_LOCALPART.test(local);
-}
-
-function findAccount(accounts, accountId) {
-  return (accounts || []).find(a => a.id === accountId);
-}
-
-/**
- * True when a sender must never be proposed for alwaysDelete: it shares the
- * account's own mail domain (internal), or matches an email/domain rule in the
- * account's prioritySenders / neverDelete. Mirrors classify-emails' protection
- * lists; config (companies.json) remains the single source of truth.
- */
-export function isProtectedSender(account, senderEmail) {
-  if (!account) return false;
-  const email = String(senderEmail || "").toLowerCase();
-  const domain = email.split("@")[1] || "";
-  const myDomain = ((account.myEmail || "").split("@")[1] || "").toLowerCase();
-  if (myDomain && domain === myDomain) return true;
-  const lists = [...(account.prioritySenders || []), ...(account.neverDelete || [])];
-  for (const rule of lists) {
-    if (rule.type === "email" && (rule.value || "").toLowerCase() === email) return true;
-    if (rule.type === "domain" && (rule.value || "").toLowerCase() === domain) return true;
-  }
-  return false;
 }
 
 function compactEmail(e, accountId) {
