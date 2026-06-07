@@ -21,6 +21,10 @@ import { fileURLToPath } from "node:url";
 import { atomicWrite } from "./fs-utils.js";
 import { groupForReasoning } from "./collapse.js";
 import { proposalId, isPendingProposal, nextCounterFor } from "./pattern-discovery.js";
+import { looksAutomated, isProtectedSender, findAccount } from "./sender-guards.js";
+import { detectBulkSignals } from "./classify-emails.js";
+import { applyConfidenceTier } from "./confidence-tier.js";
+export { looksAutomated, isProtectedSender } from "./sender-guards.js";
 
 export async function collectPages(fetchPage, { sinceMs, dateOf }) {
   const out = [];
@@ -108,12 +112,14 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
       const tag = heuristicIds.has(e.id) ? "heuristic-delete-candidate" : "survivor";
       if (tag === "survivor") aSurv++; else aHeur++;
       emailsById[e.id] = compactEmail(e, acct.id);
-      toCollapse.push({
+      const item = {
         msgid: e.id, account: acct.id, tag,
         from: e.from, fromName: e.fromName, subject: e.subject,
         preview: (e.preview || "").slice(0, 200),
         receivedAt: e.receivedAt || e.received, hasListUnsubscribe: !!e.hasListUnsubscribe,
-      });
+      };
+      if (tag === "heuristic-delete-candidate") item.bulkScore = detectBulkSignals(e, acct.myEmail).score;
+      toCollapse.push(item);
     }
     fetched += aFetched; explicitDropped += aExplicit; survivors += aSurv; heuristicCandidates += aHeur;
     perAccount[acct.id] = { fetched: aFetched, explicitDropped: aExplicit, survivors: aSurv, heuristicCandidates: aHeur };
@@ -127,16 +133,40 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
     bundle.push(item);
   }
 
+  // Confidence tier — deterministic disposition of corroborated-bulk candidate
+  // groups (the same verdict the reasoner would emit), gated + validated. Stamps
+  // representatives; emits tierRecords (active mode only). build-bundle never deletes.
+  const accountsById = {};
+  for (const a of accounts) accountsById[a.id] = a;
+  const tier = applyConfidenceTier(bundle, groups, accountsById);
+  const bundleByMsgid = new Map(bundle.map(b => [b.msgid, b]));
+  for (const [repMsgid, d] of Object.entries(tier.decisions)) {
+    const item = bundleByMsgid.get(repMsgid);
+    if (item) item.tier = { verdict: d.verdict, score: d.score, mode: d.mode, audited: d.audited };
+  }
+  const tierMode = (() => {
+    const modes = new Set(accounts.map(a => a.candidateTier && a.candidateTier.mode).filter(Boolean));
+    if (modes.has("active")) return "active";
+    if (modes.has("shadow")) return "shadow";
+    return "off";
+  })();
+
   // Surface noise-class proposals for alert-batches (never auto-drop).
   const proposals = [];
   let counter = nextCounterFor(pendingProposals, (now || "").slice(0, 10));
   for (const group of groups) {
     if (group.kind !== "alert-batch") continue;
-    const rep = bundle.find(b => b.msgid === group.representativeMsgid);
+    const rep = bundleByMsgid.get(group.representativeMsgid);
     if (!rep) continue;
     const sender = (rep.from || "").toLowerCase();
+    if (!sender) continue;
+    // Guard: only propose alwaysDelete for senders that look automated AND aren't
+    // protected. A >=4-same-sender skeleton batch can be a human thread, a payment
+    // processor, or internal mail — none of those are noise. (Leak-1 meta-fix.)
+    if (!looksAutomated(sender, rep.hasListUnsubscribe)) continue;
+    if (isProtectedSender(findAccount(accounts, rep.account), sender)) continue;
     const target = `companies.${rep.account}.alwaysDelete`;
-    if (!sender || isPendingProposal(pendingProposals, target, sender)) continue;
+    if (isPendingProposal(pendingProposals, target, sender)) continue;
     proposals.push({
       id: proposalId(now, counter++),
       target,
@@ -147,18 +177,29 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
   }
 
   const fromMembers = toCollapse.length;
-  const reasoningUnits = groups.length;
+  const totalGroups = groups.length;
+  const reasoningUnits = totalGroups - tier.stats.trashedGroups;
   const funnel = {
     fetched, explicitDropped, survivors, heuristicCandidates,
-    collapsed: { groups: reasoningUnits, fromMembers, savedJudgments: fromMembers - reasoningUnits },
-    reasoningUnits, perAccount,
+    collapsed: { groups: totalGroups, fromMembers, savedJudgments: fromMembers - totalGroups },
+    reasoningUnits,
+    tier: {
+      mode: tierMode,
+      eligibleGroups: tier.stats.eligibleGroups,
+      trashedGroups: tier.stats.trashedGroups,
+      auditedGroups: tier.stats.auditedGroups,
+      trashedMembers: tier.stats.trashedMembers,
+      perAccount: tier.stats.perAccount,
+    },
+    perAccount,
   };
 
-  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals };
+  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals, tierRecords: tier.tierRecords };
 }
 
 function funnelLine(f) {
-  return `fetched ${f.fetched} → explicit-dropped ${f.explicitDropped} → ${f.survivors} survivors + ${f.heuristicCandidates} candidates → collapse ${f.collapsed.fromMembers}→${f.reasoningUnits} units → reasoned ${f.reasoningUnits}`;
+  const trashed = (f.tier && f.tier.trashedGroups) || 0;
+  return `fetched ${f.fetched} → explicit-dropped ${f.explicitDropped} → ${f.survivors} survivors + ${f.heuristicCandidates} candidates → collapse ${f.collapsed.fromMembers}→${f.collapsed.groups} units → tier ${trashed} auto-trashed → reasoned ${f.reasoningUnits}`;
 }
 
 export function resolveSince(arg, nowIso) {
@@ -184,9 +225,20 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
   const since = resolveSince(flags.since || "30d", nowIso);
   const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
   const wanted = flags.accounts ? new Set(flags.accounts.split(",")) : null;
+  const accountTypes = JSON.parse(readFileSync(join(root, "config/account-types.json"), "utf-8"));
   const accounts = companies.companies
     .filter(c => !wanted || wanted.has(c.id))
-    .map(c => ({ id: c.id, accountType: c.accountType, provider: c.provider }));
+    // myEmail / prioritySenders / neverDelete feed the alert-batch proposal guard
+    // (looksAutomated + isProtectedSender). Without them the guard can't tell an
+    // internal/processor/protected sender from genuine noise.
+    .map(c => {
+      const typeCfg = accountTypes[c.accountType] || {};
+      return {
+        id: c.id, accountType: c.accountType, provider: c.provider,
+        myEmail: c.myEmail, prioritySenders: c.prioritySenders, neverDelete: c.neverDelete,
+        candidateTier: c.candidateTier ?? typeCfg.candidateTier,
+      };
+    });
 
   const { buildGraphClient } = await import("./graph-client.js");
   const { buildGmailClient } = await import("./gmail-client.js");
