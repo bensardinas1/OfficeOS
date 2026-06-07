@@ -85,3 +85,30 @@ describe("applyConfidenceTier — shadow mode", () => {
     assert.equal(stats.trashedGroups, 0);
   });
 });
+
+describe("applyConfidenceTier — active mode", () => {
+  it("auto-trashes a non-sampled eligible group: tierRecords for EVERY member", () => {
+    const { bundle, groups, accountsById } = batch({ mode: "active" });
+    accountsById.biz.candidateTier.auditSamplePercent = 0; // none held back
+    const { decisions, tierRecords, stats } = applyConfidenceTier(bundle, groups, accountsById);
+    assert.equal(decisions["m0"].audited, false);
+    assert.equal(tierRecords.length, 5, "one trash record per member");
+    assert.deepEqual(tierRecords.map(r => r.msgid).sort(), ["m0", "m1", "m2", "m3", "m4"]);
+    assert.ok(tierRecords.every(r => r.verdict === "trash" && r.issue === null));
+    assert.match(tierRecords[0].reason, /^tier:bulk-score>=3\+alert-batch\(5\)$/);
+    assert.equal(stats.trashedGroups, 1);
+    assert.equal(stats.trashedMembers, 5);
+    assert.equal(stats.auditedGroups, 0);
+    assert.equal(stats.perAccount.biz.trashedMembers, 5);
+  });
+
+  it("a sampled eligible group is held back: decision.audited=true, NO tierRecords", () => {
+    const { bundle, groups, accountsById } = batch({ mode: "active" });
+    accountsById.biz.candidateTier.auditSamplePercent = 100; // always hold back
+    const { decisions, tierRecords, stats } = applyConfidenceTier(bundle, groups, accountsById);
+    assert.equal(decisions["m0"].audited, true);
+    assert.equal(tierRecords.length, 0);
+    assert.equal(stats.trashedGroups, 0);
+    assert.equal(stats.auditedGroups, 1);
+  });
+});
