@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildBundle, collectPages, mapOutlookMessage } from "../build-bundle.js";
+import { buildBundle, collectPages, mapOutlookMessage, looksAutomated, isProtectedSender } from "../build-bundle.js";
 import { detectBulkSignals } from "../classify-emails.js";
 
 describe("collectPages — paginates until past the window", () => {
@@ -139,7 +139,7 @@ describe("buildBundle — alert-batch surfaces a noise-class proposal", () => {
       accounts: [{ id: "biz", accountType: "business" }],
       now: "2026-06-05T12:00:00Z",
       fetchAllFn: async () => Array.from({ length: 5 }, (_, i) => ({
-        id: "al" + i, from: "defender@microsoft.com", fromName: "Defender",
+        id: "al" + i, from: "noreply@microsoft.com", fromName: "Defender",
         subject: `Attack path #${i}`, preview: "alert", receivedAt: "2026-06-05T08:00:00Z", hasListUnsubscribe: false,
       })),
       classifyFn: (emails) => {
@@ -152,13 +152,13 @@ describe("buildBundle — alert-batch surfaces a noise-class proposal", () => {
   it("proposes an alwaysDelete for the batch sender, with no pre-existing pending proposal", async () => {
     const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: [] });
     assert.ok(Array.isArray(out.proposals));
-    const p = out.proposals.find(p => p.payload && p.payload.value === "defender@microsoft.com");
+    const p = out.proposals.find(p => p.payload && p.payload.value === "noreply@microsoft.com");
     assert.ok(p, "proposed alwaysDelete for the batch sender");
     assert.equal(p.target, "companies.biz.alwaysDelete");
     assert.equal(p.status, "pending");
   });
   it("does not re-propose when a pending proposal already covers the sender", async () => {
-    const pending = [{ id: "p-1", target: "companies.biz.alwaysDelete", payload: { type: "email", value: "defender@microsoft.com" }, status: "pending" }];
+    const pending = [{ id: "p-1", target: "companies.biz.alwaysDelete", payload: { type: "email", value: "noreply@microsoft.com" }, status: "pending" }];
     const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: pending });
     assert.equal((out.proposals || []).length, 0);
   });
@@ -167,8 +167,104 @@ describe("buildBundle — alert-batch surfaces a noise-class proposal", () => {
       { id: "p-2026-06-05-005", target: "companies.biz.scamPatterns", payload: { subjectAll: ["x"] }, status: "approved" },
     ];
     const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: depsBatch(), pendingProposals: pending });
-    const p = out.proposals.find(p => p.payload.value === "defender@microsoft.com");
+    const p = out.proposals.find(p => p.payload.value === "noreply@microsoft.com");
     assert.ok(p, "proposal created");
     assert.equal(p.id, "p-2026-06-05-006", "next id continues from same-day max (006), not length+1 (002)");
+  });
+});
+
+describe("looksAutomated — only automated-looking senders are noise candidates", () => {
+  it("flags common automated local-parts", () => {
+    for (const addr of [
+      "noreply@x.com", "no-reply@x.com", "donotreply@x.com", "do-not-reply@x.com",
+      "notifications@x.com", "notification@x.com", "alerts@x.com", "alert@x.com",
+      "mailer-daemon@x.com", "billing.noreply@x.com", "alerts+sec@x.com",
+    ]) {
+      assert.equal(looksAutomated(addr, false), true, `expected automated: ${addr}`);
+    }
+  });
+
+  it("does NOT flag human / processor / internal local-parts", () => {
+    for (const addr of [
+      "jared.kernodle@partner.com", "emerson@pathpeptides.com", "luis@brickellpay.com",
+      "support@tsys.com", "defender@microsoft.com", "sales@vendor.com",
+    ]) {
+      assert.equal(looksAutomated(addr, false), false, `expected NOT automated: ${addr}`);
+    }
+  });
+
+  it("treats a List-Unsubscribe header as automated regardless of local-part", () => {
+    assert.equal(looksAutomated("newsletter@vendor.com", true), true);
+    assert.equal(looksAutomated("jane@vendor.com", true), true);
+  });
+});
+
+describe("isProtectedSender — config-driven protection lookup", () => {
+  const account = {
+    id: "biz",
+    myEmail: "me@brickellpay.com",
+    prioritySenders: [{ type: "email", value: "partner@bigco.com", label: "Partner" }],
+    neverDelete: [{ type: "domain", value: "processor.com", label: "Processor" }],
+  };
+
+  it("protects the account's own internal domain (from myEmail)", () => {
+    assert.equal(isProtectedSender(account, "noreply@brickellpay.com"), true);
+  });
+  it("protects an exact prioritySenders email", () => {
+    assert.equal(isProtectedSender(account, "partner@bigco.com"), true);
+  });
+  it("protects a neverDelete domain", () => {
+    assert.equal(isProtectedSender(account, "alerts@processor.com"), true);
+  });
+  it("does not protect an unrelated sender", () => {
+    assert.equal(isProtectedSender(account, "noreply@randomvendor.com"), false);
+  });
+  it("returns false for a missing account (cannot verify protection)", () => {
+    assert.equal(isProtectedSender(undefined, "noreply@x.com"), false);
+  });
+});
+
+describe("buildBundle — alert-batch proposal guard", () => {
+  function guardDeps({ from, hasListUnsubscribe = false, account = { id: "biz", accountType: "business" } }) {
+    return {
+      accounts: [account],
+      now: "2026-06-05T12:00:00Z",
+      fetchAllFn: async () => Array.from({ length: 5 }, (_, i) => ({
+        id: "al" + i, from, fromName: "Batch",
+        subject: `Notice #${i}`, preview: "body", receivedAt: "2026-06-05T08:00:00Z", hasListUnsubscribe,
+      })),
+      classifyFn: (emails) => {
+        const r = { categories: {}, deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
+        for (const e of emails) { r.deletionCandidates.push(e); r.heuristicDeletions.push(e); }
+        return r;
+      },
+    };
+  }
+
+  it("suppresses the proposal for a non-automated human/processor sender", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: guardDeps({ from: "jared.kernodle@partner.com" }) });
+    assert.equal((out.proposals || []).length, 0, "human-looking sender must not be proposed for alwaysDelete");
+  });
+
+  it("proposes for an automated local-part sender", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: guardDeps({ from: "alerts@vendor.com" }) });
+    assert.ok(out.proposals.find(p => p.payload.value === "alerts@vendor.com"), "automated sender should be proposed");
+  });
+
+  it("proposes for a non-automated local-part when List-Unsubscribe is present", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: guardDeps({ from: "news@vendor.com", hasListUnsubscribe: true }) });
+    assert.ok(out.proposals.find(p => p.payload.value === "news@vendor.com"), "list-unsubscribe sender should be proposed");
+  });
+
+  it("suppresses the proposal for an automated sender that is protected (internal domain)", async () => {
+    const account = { id: "biz", accountType: "business", myEmail: "me@brickellpay.com" };
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: guardDeps({ from: "noreply@brickellpay.com", account }) });
+    assert.equal((out.proposals || []).length, 0, "internal-domain sender must not be proposed even if automated");
+  });
+
+  it("suppresses the proposal for an automated sender in prioritySenders", async () => {
+    const account = { id: "biz", accountType: "business", prioritySenders: [{ type: "email", value: "alerts@vendor.com" }] };
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: guardDeps({ from: "alerts@vendor.com", account }) });
+    assert.equal((out.proposals || []).length, 0, "protected sender must not be proposed even if automated");
   });
 });

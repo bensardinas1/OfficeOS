@@ -69,6 +69,48 @@ export function mapOutlookMessage(m) {
   };
 }
 
+// Local-part patterns that mark a sender as a machine, not a person. Anchored to
+// a word boundary (start, or a . _ + - separator) so "salesnoreply" stays human
+// while "billing.noreply" / "alerts+sec" register as automated.
+const AUTOMATED_LOCALPART =
+  /(?:^|[._+-])(?:no-?reply|do-?not-?reply|notifications?|alerts?|mailer-daemon)(?:$|[._+-])/i;
+
+/**
+ * True when a batch sender looks automated — either it carries List-Unsubscribe
+ * (already a strong bulk signal) or its local-part matches a machine pattern.
+ * Used to keep the alert-batch proposal loop from flagging human threads and
+ * processors (which collapse into batches too) as alwaysDelete noise.
+ */
+export function looksAutomated(senderEmail, hasListUnsubscribe) {
+  if (hasListUnsubscribe) return true;
+  const local = (String(senderEmail || "").split("@")[0] || "").toLowerCase();
+  return AUTOMATED_LOCALPART.test(local);
+}
+
+function findAccount(accounts, accountId) {
+  return (accounts || []).find(a => a.id === accountId);
+}
+
+/**
+ * True when a sender must never be proposed for alwaysDelete: it shares the
+ * account's own mail domain (internal), or matches an email/domain rule in the
+ * account's prioritySenders / neverDelete. Mirrors classify-emails' protection
+ * lists; config (companies.json) remains the single source of truth.
+ */
+export function isProtectedSender(account, senderEmail) {
+  if (!account) return false;
+  const email = String(senderEmail || "").toLowerCase();
+  const domain = email.split("@")[1] || "";
+  const myDomain = ((account.myEmail || "").split("@")[1] || "").toLowerCase();
+  if (myDomain && domain === myDomain) return true;
+  const lists = [...(account.prioritySenders || []), ...(account.neverDelete || [])];
+  for (const rule of lists) {
+    if (rule.type === "email" && (rule.value || "").toLowerCase() === email) return true;
+    if (rule.type === "domain" && (rule.value || "").toLowerCase() === domain) return true;
+  }
+  return false;
+}
+
 function compactEmail(e, accountId) {
   return {
     id: e.id, account: accountId,
@@ -135,8 +177,14 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
     const rep = bundle.find(b => b.msgid === group.representativeMsgid);
     if (!rep) continue;
     const sender = (rep.from || "").toLowerCase();
+    if (!sender) continue;
+    // Guard: only propose alwaysDelete for senders that look automated AND aren't
+    // protected. A >=4-same-sender skeleton batch can be a human thread, a payment
+    // processor, or internal mail — none of those are noise. (Leak-1 meta-fix.)
+    if (!looksAutomated(sender, rep.hasListUnsubscribe)) continue;
+    if (isProtectedSender(findAccount(accounts, rep.account), sender)) continue;
     const target = `companies.${rep.account}.alwaysDelete`;
-    if (!sender || isPendingProposal(pendingProposals, target, sender)) continue;
+    if (isPendingProposal(pendingProposals, target, sender)) continue;
     proposals.push({
       id: proposalId(now, counter++),
       target,
@@ -186,7 +234,13 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
   const wanted = flags.accounts ? new Set(flags.accounts.split(",")) : null;
   const accounts = companies.companies
     .filter(c => !wanted || wanted.has(c.id))
-    .map(c => ({ id: c.id, accountType: c.accountType, provider: c.provider }));
+    // myEmail / prioritySenders / neverDelete feed the alert-batch proposal guard
+    // (looksAutomated + isProtectedSender). Without them the guard can't tell an
+    // internal/processor/protected sender from genuine noise.
+    .map(c => ({
+      id: c.id, accountType: c.accountType, provider: c.provider,
+      myEmail: c.myEmail, prioritySenders: c.prioritySenders, neverDelete: c.neverDelete,
+    }));
 
   const { buildGraphClient } = await import("./graph-client.js");
   const { buildGmailClient } = await import("./gmail-client.js");
