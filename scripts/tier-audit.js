@@ -59,6 +59,10 @@ if (process.argv[1] && process.argv[1].endsWith("tier-audit.js")) {
     else if (args[i] === "--threshold") flags.threshold = Number(args[++i]);
     else if (args[i] === "--apply-demote") flags.applyDemote = true;
   }
+  if (!flags.records) {
+    process.stderr.write("tier-audit: --records <path> is required\n");
+    process.exit(1);
+  }
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const root = join(__dirname, "..");
   const bundleObj = JSON.parse(readFileSync(flags.bundle || join(root, "data/.last-run-bundle.json"), "utf-8"));
