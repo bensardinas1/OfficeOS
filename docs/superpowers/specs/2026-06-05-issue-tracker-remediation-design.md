@@ -109,6 +109,8 @@ fetched 540 → explicit-dropped 310 → 230 to-reason (135 survivors + 95 candi
 
 Reconciliation guardrail: `fetched = explicitDropped + survivors + heuristicCandidates` (everything fetched is either explicitly dropped, kept as a survivor, or deferred to the reasoner as a heuristic candidate; protected senders count as survivors). The load test reads the funnel as the design-effectiveness verdict.
 
+**R-reduction invariant (confirmed empirically, 2026-06-07 load test).** Because collapse spans both survivors and candidates, **R (reasoningUnits) moves ONLY via explicit-drop and collapse** — never by reclassifying an email between the survivor and candidate lanes. Lowering the bulk-signal threshold shuffles mail survivor↔candidate, but both lanes are inside the set collapse reasons over, so it does not change R (it is a *correctness* fix — right default disposition — and a *prerequisite* for cost reduction, since reclassified bulk mail becomes promotable to `alwaysDelete`). To actually reduce R: approve `alwaysDelete`/`scamPatterns` (removes mail pre-collapse) or improve collapse grouping. See `docs/superpowers/reports/2026-06-07-load-test.md`.
+
 ## collapse.js — grouping rules (conservative)
 
 1. **`exact-dup`**: emails with identical normalized `(fromAddress, subject)` AND near-identical preview (first ~200 chars after whitespace/URL normalization). Cross-account included. Subject must match exactly (normalized) — different subjects from the same sender never merge.

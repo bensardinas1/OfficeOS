@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildBundle, collectPages } from "../build-bundle.js";
+import { buildBundle, collectPages, mapOutlookMessage } from "../build-bundle.js";
+import { detectBulkSignals } from "../classify-emails.js";
 
 describe("collectPages — paginates until past the window", () => {
   it("collects across pages and stops when items predate `since`", async () => {
@@ -12,6 +13,54 @@ describe("collectPages — paginates until past the window", () => {
     const fetchPage = async () => ({ items: pages[p], nextToken: p + 1 < pages.length ? String(++p) : null });
     const out = await collectPages(fetchPage, { sinceMs: new Date("2026-06-01T00:00:00Z").getTime(), dateOf: e => e.receivedAt });
     assert.deepEqual(out.map(e => e.id), ["1", "2", "3"]);
+  });
+});
+
+describe("mapOutlookMessage — hydrates bulk signals from a Graph message", () => {
+  it("extracts list-unsubscribe, precedence, and to/cc recipients", () => {
+    const m = {
+      id: "m1", subject: "Newsletter", bodyPreview: "hi",
+      from: { emailAddress: { address: "news@vendor.com", name: "Vendor" } },
+      receivedDateTime: "2026-06-05T10:00:00Z",
+      toRecipients: [{ emailAddress: { address: "list@vendor.com" } }],
+      ccRecipients: [],
+      internetMessageHeaders: [
+        { name: "List-Unsubscribe", value: "<mailto:u@vendor.com>" },
+        { name: "Precedence", value: "bulk" },
+      ],
+    };
+    const e = mapOutlookMessage(m);
+    assert.equal(e.id, "m1");
+    assert.equal(e.from, "news@vendor.com");
+    assert.equal(e.fromName, "Vendor");
+    assert.equal(e.hasListUnsubscribe, true);
+    assert.equal(e.precedence, "bulk");
+    assert.equal(e.toRecipients, "list@vendor.com");
+    assert.equal(e.ccRecipients, "");
+  });
+
+  it("handles missing headers/recipients without throwing", () => {
+    const e = mapOutlookMessage({ id: "m2", from: { emailAddress: { address: "a@b.com" } } });
+    assert.equal(e.hasListUnsubscribe, false);
+    assert.equal(e.precedence, undefined);
+    assert.equal(e.toRecipients, "");
+    assert.equal(e.ccRecipients, "");
+  });
+
+  it("hydrated fields let a bulk Outlook message reach the business threshold of 2", () => {
+    // List-Unsubscribe + Precedence:bulk = 2 signals; before this fix only L-U (score 1) was hydrated.
+    const m = {
+      id: "m3",
+      from: { emailAddress: { address: "blast@vendor.com" } },
+      toRecipients: [{ emailAddress: { address: "someone-else@vendor.com" } }],
+      internetMessageHeaders: [
+        { name: "List-Unsubscribe", value: "<mailto:u@vendor.com>" },
+        { name: "Precedence", value: "bulk" },
+      ],
+    };
+    const e = mapOutlookMessage(m);
+    const { score } = detectBulkSignals(e, "me@brickellpay.com");
+    assert.ok(score >= 2, `expected >=2 bulk signals, got ${score}`);
   });
 });
 

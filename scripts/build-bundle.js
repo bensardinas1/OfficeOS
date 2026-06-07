@@ -42,6 +42,33 @@ export async function collectPages(fetchPage, { sinceMs, dateOf }) {
   return out;
 }
 
+/**
+ * Maps a Graph message into the email shape the classifier consumes, hydrating
+ * ALL bulk signals reachable from Outlook — not just List-Unsubscribe. The
+ * `internetMessageHeaders` and `toRecipients`/`ccRecipients` are already fetched
+ * in the select; this pulls `precedence` and recipients out so `detectBulkSignals`
+ * can score >=2 on genuinely-bulk mail (the business threshold), instead of being
+ * capped at 1 by List-Unsubscribe alone.
+ */
+export function mapOutlookMessage(m) {
+  const headers = m.internetMessageHeaders || [];
+  const headerVal = (name) => {
+    const h = headers.find(x => (x.name || "").toLowerCase() === name);
+    return h ? h.value : undefined;
+  };
+  const recipStr = (arr) => (arr || [])
+    .map(r => r.emailAddress?.address || "").filter(Boolean).join(", ");
+  return {
+    id: m.id, subject: m.subject,
+    from: m.from?.emailAddress?.address, fromName: m.from?.emailAddress?.name,
+    receivedAt: m.receivedDateTime, preview: m.bodyPreview,
+    hasListUnsubscribe: headers.some(h => (h.name || "").toLowerCase() === "list-unsubscribe"),
+    precedence: headerVal("precedence"),
+    toRecipients: recipStr(m.toRecipients),
+    ccRecipients: recipStr(m.ccRecipients),
+  };
+}
+
 function compactEmail(e, accountId) {
   return {
     id: e.id, account: accountId,
@@ -174,15 +201,10 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
       const req = token
         ? client.api(token)
         : client.api("/me/mailFolders/inbox/messages").top(100)
-            .select("id,subject,from,receivedDateTime,bodyPreview,internetMessageHeaders")
+            .select("id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,internetMessageHeaders")
             .orderby("receivedDateTime desc");
       const res = await req.get();
-      const items = (res.value || []).map(m => ({
-        id: m.id, subject: m.subject,
-        from: m.from?.emailAddress?.address, fromName: m.from?.emailAddress?.name,
-        receivedAt: m.receivedDateTime, preview: m.bodyPreview,
-        hasListUnsubscribe: (m.internetMessageHeaders || []).some(h => (h.name || "").toLowerCase() === "list-unsubscribe"),
-      }));
+      const items = (res.value || []).map(mapOutlookMessage);
       return { items, nextToken: res["@odata.nextLink"] || null };
     }, { sinceMs, dateOf: e => e.receivedAt });
   }
