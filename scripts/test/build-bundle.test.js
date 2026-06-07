@@ -268,3 +268,53 @@ describe("buildBundle — alert-batch proposal guard", () => {
     assert.equal((out.proposals || []).length, 0, "protected sender must not be proposed even if automated");
   });
 });
+
+describe("buildBundle — confidence tier integration", () => {
+  // 5 same-sender candidates with 3 structural bulk signals (list-unsub + precedence:bulk + bcc).
+  function tierDeps(mode) {
+    return {
+      accounts: [{ id: "biz", accountType: "business", myEmail: "me@brickellpay.com", candidateTier: { mode, scoreCutoff: 3, minGroupSize: 4, auditSamplePercent: 0 } }],
+      now: "2026-06-05T12:00:00Z",
+      fetchAllFn: async () => Array.from({ length: 5 }, (_, i) => ({
+        id: "b" + i, from: "blast@vendor.com", fromName: "Vendor", subject: `Deal #${i}`, preview: "buy",
+        receivedAt: "2026-06-05T08:00:00Z", hasListUnsubscribe: true, precedence: "bulk", toRecipients: "list@vendor.com", ccRecipients: "",
+      })),
+      classifyFn: (emails) => {
+        const r = { categories: {}, deletionCandidates: [], explicitDeletions: [], heuristicDeletions: [] };
+        for (const e of emails) { r.deletionCandidates.push(e); r.heuristicDeletions.push(e); }
+        return r;
+      },
+    };
+  }
+
+  it("computes bulkScore on candidates", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: tierDeps("shadow") });
+    const b0 = out.bundle.find(b => b.msgid === "b0");
+    assert.ok(b0.bulkScore >= 3, `expected bulkScore>=3, got ${b0.bulkScore}`);
+  });
+
+  it("shadow mode: stamps tier on representative, emits no tierRecords, reasoningUnits unchanged", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: tierDeps("shadow") });
+    const rep = out.bundle.find(b => b.tier);
+    assert.equal(rep.tier.mode, "shadow");
+    assert.equal(rep.tier.verdict, "trash");
+    assert.equal((out.tierRecords || []).length, 0);
+    assert.equal(out.funnel.reasoningUnits, out.funnel.collapsed.groups, "shadow does not reduce reasoningUnits");
+    assert.equal(out.funnel.tier.mode, "shadow");
+    assert.equal(out.funnel.tier.trashedGroups, 0);
+  });
+
+  it("active mode: emits tierRecords for all members and drops reasoningUnits by the trashed group", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: tierDeps("active") });
+    assert.equal(out.tierRecords.length, 5, "one trash record per batch member");
+    assert.equal(out.funnel.tier.trashedGroups, 1);
+    assert.equal(out.funnel.tier.trashedMembers, 5);
+    assert.equal(out.funnel.reasoningUnits, out.funnel.collapsed.groups - 1, "active drops R by the auto-trashed group");
+  });
+
+  it("funnel still reconciles fetched = explicitDropped + survivors + heuristicCandidates", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: tierDeps("active") });
+    const f = out.funnel;
+    assert.equal(f.fetched, f.explicitDropped + f.survivors + f.heuristicCandidates);
+  });
+});

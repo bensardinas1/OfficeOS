@@ -22,6 +22,8 @@ import { atomicWrite } from "./fs-utils.js";
 import { groupForReasoning } from "./collapse.js";
 import { proposalId, isPendingProposal, nextCounterFor } from "./pattern-discovery.js";
 import { looksAutomated, isProtectedSender, findAccount } from "./sender-guards.js";
+import { detectBulkSignals } from "./classify-emails.js";
+import { applyConfidenceTier } from "./confidence-tier.js";
 export { looksAutomated, isProtectedSender } from "./sender-guards.js";
 
 export async function collectPages(fetchPage, { sinceMs, dateOf }) {
@@ -110,12 +112,14 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
       const tag = heuristicIds.has(e.id) ? "heuristic-delete-candidate" : "survivor";
       if (tag === "survivor") aSurv++; else aHeur++;
       emailsById[e.id] = compactEmail(e, acct.id);
-      toCollapse.push({
+      const item = {
         msgid: e.id, account: acct.id, tag,
         from: e.from, fromName: e.fromName, subject: e.subject,
         preview: (e.preview || "").slice(0, 200),
         receivedAt: e.receivedAt || e.received, hasListUnsubscribe: !!e.hasListUnsubscribe,
-      });
+      };
+      if (tag === "heuristic-delete-candidate") item.bulkScore = detectBulkSignals(e, acct.myEmail).score;
+      toCollapse.push(item);
     }
     fetched += aFetched; explicitDropped += aExplicit; survivors += aSurv; heuristicCandidates += aHeur;
     perAccount[acct.id] = { fetched: aFetched, explicitDropped: aExplicit, survivors: aSurv, heuristicCandidates: aHeur };
@@ -128,6 +132,23 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
     item.group = { id: g.groupId, kind: group.kind, isRepresentative: g.isRepresentative, size: group.memberMsgids.length };
     bundle.push(item);
   }
+
+  // Confidence tier — deterministic disposition of corroborated-bulk candidate
+  // groups (the same verdict the reasoner would emit), gated + validated. Stamps
+  // representatives; emits tierRecords (active mode only). build-bundle never deletes.
+  const accountsById = {};
+  for (const a of accounts) accountsById[a.id] = a;
+  const tier = applyConfidenceTier(bundle, groups, accountsById);
+  for (const [repMsgid, d] of Object.entries(tier.decisions)) {
+    const item = bundle.find(b => b.msgid === repMsgid);
+    if (item) item.tier = { verdict: d.verdict, score: d.score, mode: d.mode, audited: d.audited };
+  }
+  const tierMode = (() => {
+    const modes = new Set(accounts.map(a => a.candidateTier && a.candidateTier.mode).filter(Boolean));
+    if (modes.has("active")) return "active";
+    if (modes.has("shadow")) return "shadow";
+    return "off";
+  })();
 
   // Surface noise-class proposals for alert-batches (never auto-drop).
   const proposals = [];
@@ -155,14 +176,24 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
   }
 
   const fromMembers = toCollapse.length;
-  const reasoningUnits = groups.length;
+  const totalGroups = groups.length;
+  const reasoningUnits = totalGroups - tier.stats.trashedGroups;
   const funnel = {
     fetched, explicitDropped, survivors, heuristicCandidates,
-    collapsed: { groups: reasoningUnits, fromMembers, savedJudgments: fromMembers - reasoningUnits },
-    reasoningUnits, perAccount,
+    collapsed: { groups: totalGroups, fromMembers, savedJudgments: fromMembers - totalGroups },
+    reasoningUnits,
+    tier: {
+      mode: tierMode,
+      eligibleGroups: tier.stats.eligibleGroups,
+      trashedGroups: tier.stats.trashedGroups,
+      auditedGroups: tier.stats.auditedGroups,
+      trashedMembers: tier.stats.trashedMembers,
+      perAccount: tier.stats.perAccount,
+    },
+    perAccount,
   };
 
-  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals };
+  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals, tierRecords: tier.tierRecords };
 }
 
 function funnelLine(f) {
@@ -192,15 +223,20 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
   const since = resolveSince(flags.since || "30d", nowIso);
   const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
   const wanted = flags.accounts ? new Set(flags.accounts.split(",")) : null;
+  const accountTypes = JSON.parse(readFileSync(join(root, "config/account-types.json"), "utf-8"));
   const accounts = companies.companies
     .filter(c => !wanted || wanted.has(c.id))
     // myEmail / prioritySenders / neverDelete feed the alert-batch proposal guard
     // (looksAutomated + isProtectedSender). Without them the guard can't tell an
     // internal/processor/protected sender from genuine noise.
-    .map(c => ({
-      id: c.id, accountType: c.accountType, provider: c.provider,
-      myEmail: c.myEmail, prioritySenders: c.prioritySenders, neverDelete: c.neverDelete,
-    }));
+    .map(c => {
+      const typeCfg = accountTypes[c.accountType] || {};
+      return {
+        id: c.id, accountType: c.accountType, provider: c.provider,
+        myEmail: c.myEmail, prioritySenders: c.prioritySenders, neverDelete: c.neverDelete,
+        candidateTier: c.candidateTier ?? typeCfg.candidateTier,
+      };
+    });
 
   const { buildGraphClient } = await import("./graph-client.js");
   const { buildGmailClient } = await import("./gmail-client.js");
