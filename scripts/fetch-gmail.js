@@ -10,11 +10,12 @@
  *   folder    — ignored for Gmail; included for interface parity with fetch-emails.js.
  *
  * Output: JSON array of email objects matching the shape produced by fetch-emails.js
- *         (id, subject, from, fromName, received, receivedAt, isRead, importance,
- *          hasAttachments, preview, hasListUnsubscribe, precedence).
+ *         (id, threadId, subject, from, fromName, received, receivedAt, isRead,
+ *          importance, hasAttachments, preview, hasListUnsubscribe, precedence,
+ *          toRecipients, ccRecipients, gmailCategories).
  */
 
-import { buildGmailClient } from "./gmail-client.js";
+import { buildGmailClient, mapGmailMessage } from "./gmail-client.js";
 import { verifyGmailAccount } from "./gmail-verify.js";
 import "dotenv/config";
 
@@ -43,32 +44,9 @@ try {
         userId: "me",
         id,
         format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe", "Precedence"],
+        metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe", "Precedence", "To", "Cc"],
       });
-      const headers = res.data.payload?.headers || [];
-      const h = (name) => (headers.find(x => x.name.toLowerCase() === name.toLowerCase())?.value || "");
-      const fromHeader = h("From");
-      // "Display Name <user@host.com>" or "user@host.com"
-      const angleMatch = fromHeader.match(/^([^<]*)<([^>]+)>$/);
-      const fromName = angleMatch ? angleMatch[1].trim().replace(/^"|"$/g, "") : "";
-      const from = angleMatch ? angleMatch[2].trim() : fromHeader.trim();
-      const received = h("Date");
-      return {
-        id,
-        threadId: res.data.threadId,
-        subject: h("Subject"),
-        from,
-        fromName,
-        received,
-        receivedAt: received ? new Date(received).toISOString() : null,
-        isRead: !(res.data.labelIds || []).includes("UNREAD"),
-        importance: "normal",
-        hasAttachments: false, // metadata format doesn't expose attachments cheaply
-        preview: res.data.snippet || "",
-        hasListUnsubscribe: !!h("List-Unsubscribe"),
-        precedence: h("Precedence").toLowerCase(),
-        gmailCategories: res.data.labelIds || [],
-      };
+      return mapGmailMessage(res.data);
     })
   );
 
