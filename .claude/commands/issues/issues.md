@@ -5,6 +5,13 @@ allowed-tools: Bash, Read, Write, Edit
 
 # Issues
 
+> ⚠️ **Run in the main repo — never a git worktree.** This skill reads gitignored,
+> machine-local files: `config/companies.json`, `config/account-types.json`, and the
+> local OAuth token cache. A fresh worktree has none of them, so config/credential
+> loading fails ("cannot read the live files"). Do **not** invoke `using-git-worktrees`
+> or create a worktree for this skill — it is read-mostly ops (fetch → reason →
+> soft-delete via API → drafts) and gains nothing from isolation.
+
 Topic-based issue tracker over your accounts. Email feeds into issues; you converse
 with issues. Terse by default — 1-3 lines unless asked for `more`.
 

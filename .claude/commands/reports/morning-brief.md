@@ -5,6 +5,12 @@ allowed-tools: Bash, Read, Write, Edit
 
 # Morning Brief
 
+> ⚠️ **Run in the main repo — never a git worktree.** This skill reads gitignored,
+> machine-local files: `config/companies.json`, `config/account-types.json`, and the
+> local OAuth token cache. A fresh worktree has none of them, so config/credential
+> loading fails. Do **not** invoke `using-git-worktrees` or create a worktree for this
+> skill — it is read-mostly ops and gains nothing from isolation.
+
 Generate the autonomous morning brief. Replaces `/triage` and `/daily-brief`.
 
 ## Inputs
