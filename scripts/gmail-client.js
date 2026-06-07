@@ -92,3 +92,53 @@ export async function buildGmailClient() {
 
   return google.gmail({ version: "v1", auth: oauth2 });
 }
+
+/**
+ * Maps a Gmail `users.messages.get` resource (the `res.data` object, fetched with
+ * format:"metadata" and metadataHeaders From,Subject,Date,List-Unsubscribe,
+ * Precedence,To,Cc) into the normalized email shape the classifier + detectBulkSignals
+ * consume. Mirrors build-bundle's mapOutlookMessage: hydrates ALL bulk signals Gmail
+ * exposes — category labels (the strongest), Precedence, and To/Cc recipients (BCC
+ * signal) — not just List-Unsubscribe. Pure; never throws on missing fields.
+ */
+export function mapGmailMessage(msg, opts = {}) {
+  const headers = msg.payload?.headers || [];
+  const h = (name) => {
+    const found = headers.find((x) => (x.name || "").toLowerCase() === name.toLowerCase());
+    return found ? (found.value || "") : "";
+  };
+  const fromRaw = h("From");
+  let fromName = "";
+  let from = fromRaw.trim();
+  const m = fromRaw.match(/^"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  if (m) { fromName = m[1].trim(); from = m[2].trim(); }
+
+  const dateHeader = h("Date");
+  let received = dateHeader;
+  if (dateHeader) {
+    const d = new Date(dateHeader);
+    if (!isNaN(d.getTime())) received = d.toISOString();
+  }
+  const receivedAt = msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : received;
+
+  const labelIds = msg.labelIds || [];
+  const snippet = msg.snippet || "";
+  return {
+    id: msg.id,
+    threadId: msg.threadId,
+    subject: h("Subject"),
+    from,
+    fromName,
+    received,
+    receivedAt,
+    isRead: !labelIds.includes("UNREAD"),
+    importance: labelIds.includes("IMPORTANT") ? "high" : "normal",
+    hasAttachments: (msg.payload?.parts || []).some((p) => p.filename && p.filename.length > 0),
+    preview: opts.previewLimit ? snippet.slice(0, opts.previewLimit) : snippet,
+    hasListUnsubscribe: !!h("List-Unsubscribe"),
+    precedence: h("Precedence").toLowerCase(),
+    toRecipients: h("To"),
+    ccRecipients: h("Cc"),
+    gmailCategories: labelIds.filter((l) => l.startsWith("CATEGORY_")),
+  };
+}
