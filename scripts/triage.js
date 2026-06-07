@@ -20,7 +20,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classify, detectBulkSignals } from "./classify-emails.js";
 import { buildGraphClient } from "./graph-client.js";
-import { buildGmailClient } from "./gmail-client.js";
+import { buildGmailClient, mapGmailMessage } from "./gmail-client.js";
 import "dotenv/config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -128,42 +128,9 @@ async function fetchGmail(hours, maxResults) {
     );
 
     for (const res of results) {
-      const headers = res.data.payload?.headers || [];
-      const getHeader = (name) =>
-        headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
-
-      const fromRaw = getHeader("From");
-      let fromName = "";
-      let fromEmail = fromRaw;
-      const match = fromRaw.match(/^"?([^"<]*?)"?\s*<([^>]+)>/);
-      if (match) {
-        fromName = match[1].trim();
-        fromEmail = match[2].trim();
-      }
-
-      const dateStr = getHeader("Date");
-      let received;
-      try { received = new Date(dateStr).toISOString(); } catch { received = dateStr; }
-
-      const labelIds = res.data.labelIds || [];
-      emails.push({
-        id: res.data.id,
-        subject: getHeader("Subject"),
-        from: fromEmail,
-        fromName: fromName || fromEmail,
-        received,
-        isRead: !labelIds.includes("UNREAD"),
-        importance: labelIds.includes("IMPORTANT") ? "high" : "normal",
-        hasAttachments: (res.data.payload?.parts || []).some(
-          (p) => p.filename && p.filename.length > 0
-        ),
-        preview: (res.data.snippet || "").slice(0, 300),
-        hasListUnsubscribe: !!getHeader("List-Unsubscribe"),
-        precedence: getHeader("Precedence") || null,
-        toRecipients: getHeader("To"),
-        ccRecipients: getHeader("Cc"),
-        gmailCategories: labelIds.filter((l) => l.startsWith("CATEGORY_")),
-      });
+      const e = mapGmailMessage(res.data, { previewLimit: 300 });
+      e.fromName = e.fromName || e.from; // preserve triage's display-name fallback
+      emails.push(e);
     }
   }
 
