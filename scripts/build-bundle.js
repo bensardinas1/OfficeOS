@@ -241,7 +241,7 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
     });
 
   const { buildGraphClient } = await import("./graph-client.js");
-  const { buildGmailClient } = await import("./gmail-client.js");
+  const { buildGmailClient, mapGmailMessage } = await import("./gmail-client.js");
   const { classify } = await import("./classify-emails.js");
   const sinceMs = new Date(since).getTime();
 
@@ -275,9 +275,8 @@ if (process.argv[1] && process.argv[1].endsWith("build-bundle.js")) {
     // TODO(perf): sequential per-message hydration; replace with gmail.batch() for
     // windows with many messages (the load test will show if this is painful).
     for (const { id } of ids) {
-      const m = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe"] });
-      const h = Object.fromEntries((m.data.payload?.headers || []).map(x => [x.name, x.value]));
-      out.push({ id, subject: h.Subject, from: (h.From || "").replace(/.*<(.+)>.*/, "$1"), fromName: (h.From || "").replace(/<.*>/, "").trim(), receivedAt: new Date(Number(m.data.internalDate)).toISOString(), preview: m.data.snippet, hasListUnsubscribe: !!h["List-Unsubscribe"] });
+      const m = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe", "Precedence", "To", "Cc"] });
+      out.push(mapGmailMessage(m.data));
     }
     return out;
   }
