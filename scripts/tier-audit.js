@@ -44,3 +44,43 @@ export function auditTier(bundle, reasonerRecords, { demoteThresholdPercent = 0 
   const falseTrashRate = rate(falseTrash, agree);
   return { agree, falseTrash, falseTrashRate, falseTrashList, demoteRecommended: falseTrashRate > demoteThresholdPercent, perAccount };
 }
+
+if (process.argv[1] && process.argv[1].endsWith("tier-audit.js")) {
+  const { readFileSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { atomicWrite } = await import("./fs-utils.js");
+
+  const args = process.argv.slice(2);
+  const flags = { applyDemote: false };
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--bundle") flags.bundle = args[++i];
+    else if (args[i] === "--records") flags.records = args[++i];
+    else if (args[i] === "--threshold") flags.threshold = Number(args[++i]);
+    else if (args[i] === "--apply-demote") flags.applyDemote = true;
+  }
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const root = join(__dirname, "..");
+  const bundleObj = JSON.parse(readFileSync(flags.bundle || join(root, "data/.last-run-bundle.json"), "utf-8"));
+  const records = JSON.parse(readFileSync(flags.records, "utf-8"));
+  const result = auditTier(bundleObj.bundle, records, { demoteThresholdPercent: flags.threshold ?? 0 });
+
+  if (flags.applyDemote) {
+    const cfgPath = join(root, "config/companies.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+    const demoted = [];
+    for (const [acct, r] of Object.entries(result.perAccount)) {
+      if (!r.demoteRecommended) continue;
+      const c = cfg.companies.find(x => x.id === acct);
+      if (c && c.candidateTier && c.candidateTier.mode === "active") {
+        c.candidateTier.mode = "shadow";
+        demoted.push(acct);
+      }
+    }
+    if (demoted.length) {
+      atomicWrite(cfgPath, JSON.stringify(cfg, null, 2));
+      process.stderr.write(`tier-audit: DEMOTED to shadow (drift): ${demoted.join(", ")}\n`);
+    }
+  }
+  process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+}
