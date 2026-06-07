@@ -139,8 +139,9 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
   const accountsById = {};
   for (const a of accounts) accountsById[a.id] = a;
   const tier = applyConfidenceTier(bundle, groups, accountsById);
+  const bundleByMsgid = new Map(bundle.map(b => [b.msgid, b]));
   for (const [repMsgid, d] of Object.entries(tier.decisions)) {
-    const item = bundle.find(b => b.msgid === repMsgid);
+    const item = bundleByMsgid.get(repMsgid);
     if (item) item.tier = { verdict: d.verdict, score: d.score, mode: d.mode, audited: d.audited };
   }
   const tierMode = (() => {
@@ -155,7 +156,7 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
   let counter = nextCounterFor(pendingProposals, (now || "").slice(0, 10));
   for (const group of groups) {
     if (group.kind !== "alert-batch") continue;
-    const rep = bundle.find(b => b.msgid === group.representativeMsgid);
+    const rep = bundleByMsgid.get(group.representativeMsgid);
     if (!rep) continue;
     const sender = (rep.from || "").toLowerCase();
     if (!sender) continue;
@@ -197,7 +198,8 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
 }
 
 function funnelLine(f) {
-  return `fetched ${f.fetched} → explicit-dropped ${f.explicitDropped} → ${f.survivors} survivors + ${f.heuristicCandidates} candidates → collapse ${f.collapsed.fromMembers}→${f.reasoningUnits} units → reasoned ${f.reasoningUnits}`;
+  const trashed = (f.tier && f.tier.trashedGroups) || 0;
+  return `fetched ${f.fetched} → explicit-dropped ${f.explicitDropped} → ${f.survivors} survivors + ${f.heuristicCandidates} candidates → collapse ${f.collapsed.fromMembers}→${f.collapsed.groups} units → tier ${trashed} auto-trashed → reasoned ${f.reasoningUnits}`;
 }
 
 export function resolveSince(arg, nowIso) {
