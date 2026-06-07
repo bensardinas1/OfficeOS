@@ -64,6 +64,16 @@ Two entry paths (cadence C):
   otherwise run `node scripts/build-bundle.js --since <delta>` (delta = time since
   `lastAssignedAt` for the accounts), then read the bundle.
 
+- **Confidence tier (steady-state cost lever).** `build-bundle.js` deterministically
+  dispositions corroborated-bulk candidate groups (high structural bulk score AND a
+  collapse group AND all-members-candidate AND sender-not-protected) as `trash`,
+  emitting `tierRecords` so the reasoner spends no judgment on obvious bulk. Lifecycle
+  per account in `config/companies.json` → `candidateTier.mode`: absent = off;
+  `shadow` = stamp + validate (reasoner still judges); `active` = auto-trash with a
+  sampled hold-back audited every run. Drift demotes `active`→`shadow` automatically.
+  Soft-delete only — `build-bundle` never deletes; the skill trashes via the existing
+  connectors after `issue-apply`.
+
 Then:
 1. Build the issue index from `loadIssues` (open only).
 2. Run the reasoner pass (`_reasoner-pass.md`) over the bundle.

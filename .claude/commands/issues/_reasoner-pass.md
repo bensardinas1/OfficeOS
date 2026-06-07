@@ -24,6 +24,16 @@ group. You do not need to re-read non-representative members — they are
 identical or near-identical by construction. This is how cost stays low without
 dropping data: one judgment, applied to all members; every member is preserved.
 
+**Confidence-tier verdicts.** Some representatives carry a `tier` field
+(`{ verdict, score, mode, audited }`). When `tier.mode === "active"` **and**
+`tier.audited === false`, that group has ALREADY been dispositioned
+deterministically as `trash` — do NOT judge it and do NOT emit records for it;
+the bundle's `tierRecords` already cover every member. When `tier.mode ===
+"shadow"`, OR `tier.audited === true`, judge the representative NORMALLY (these
+are the validation/drift-audit samples — your verdict is the ground truth the
+audit compares the tier against). Representatives with no `tier` field are judged
+as usual.
+
 ```json
 {
   "msgid": "<id>",
@@ -61,3 +71,9 @@ Emit the records as a JSON array. The deterministic applier (`scripts/issue-appl
 consumes this array; you do not mutate issue files yourself. After the applier runs,
 the skill soft-deletes the returned `toTrash` msgids via the existing delete connectors
 (`delete-emails.js` / `delete-gmail-emails.js`) — **soft-delete only, never permanent**.
+
+**After reasoning:** the skill concatenates the bundle's `tierRecords` with your
+records before invoking `scripts/issue-apply.js`, then runs
+`scripts/tier-audit.js --bundle <bundle> --records <your-records> --apply-demote`
+over the run. Any false-trash (tier trashed something you kept) demotes that
+account to `shadow` and is surfaced in full — never summarized.
