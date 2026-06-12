@@ -15,6 +15,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadCorrespondentsFile, correspondentSet } from "./correspondents.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -222,8 +223,12 @@ export function applyNoiseFilter(email, noiseFilters) {
   return false;
 }
 
-export function classify(emails, accountId) {
-  const { companies, accountTypes } = loadConfig();
+export function classify(emails, accountId, opts = {}) {
+  const { companies, accountTypes } = opts.config ?? loadConfig();
+  // Sent-mail-derived protection: addresses the user has written to are never
+  // heuristically deleted. Explicit alwaysDelete/scam rules still win.
+  const correspondents = opts.correspondents
+    ?? correspondentSet(loadCorrespondentsFile(join(__dirname, "../data/correspondents.json")), accountId);
   const account = companies.companies.find(c => c.id === accountId);
   if (!account) throw new Error(`Account not found: ${accountId}`);
 
@@ -264,8 +269,12 @@ export function classify(emails, accountId) {
   for (const email of emails) {
     let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
 
+    const isCorrespondent = correspondents.has((email.from || "").toLowerCase());
     const alwaysDeleteApplies = alwaysDeleteList.some(r => senderRuleApplies(email, r));
-    const scamApplies = scamPatterns.some(p => matchesScamPattern(email, p));
+    // Subject-based scam patterns never fire on correspondents — a known contact
+    // forwarding a scam-shaped subject is a person, not the scam. Sender-specific
+    // alwaysDelete rules are deliberate config and still win over correspondence.
+    const scamApplies = !isCorrespondent && scamPatterns.some(p => matchesScamPattern(email, p));
     const isProtected = matchesSender(email, neverDeleteList);
     const forceDelete = (alwaysDeleteApplies || scamApplies) && !isProtected;
 
@@ -284,8 +293,9 @@ export function classify(emails, accountId) {
       result.deletionCandidates.push(email);
       result.explicitDeletions.push(email);
     }
-    // neverDelete protects against pattern/category-based deletion
-    else if (isProtected) {
+    // neverDelete protects against pattern/category-based deletion;
+    // correspondents (user has emailed this address) protect the heuristic path too
+    else if (isProtected || isCorrespondent) {
       // skip — protected sender
     }
     // Standard category/pattern-based deletion — heuristic (guessed)
