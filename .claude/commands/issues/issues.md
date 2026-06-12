@@ -88,6 +88,9 @@ Then:
    Pass the bundle's heuristic-candidate msgids as `heuristicMsgids` so rescued is counted.
 4. Soft-delete `toTrash` via `delete-emails.js` / `delete-gmail-emails.js`
    (**soft-delete only**). Gmail deletes pass the accountId first (verified).
+   Also soft-delete the bundle's `explicitDeletions` (config `alwaysDelete` hits —
+   `[{msgid, account}]`) the same way: these are deliberate config kills that never
+   reach the reasoner, so the skill must delete them or they would silently survive.
 5. Update `data/issue-assignment-state.json` (`lastAssignedAt[account] = now`).
 
 ## Status view (default)

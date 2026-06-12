@@ -88,6 +88,7 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
   const bundle = [];
   const emailsById = {};
   const perAccount = {};
+  const explicitDeletions = []; // config alwaysDelete/scam hits — surfaced for the skill to soft-delete (build-bundle never deletes)
   let fetched = 0, explicitDropped = 0, survivors = 0, heuristicCandidates = 0;
 
   const warnings = [];
@@ -108,7 +109,7 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
     const heuristicIds = new Set((r.heuristicDeletions || []).map(e => e.id));
     let aFetched = emails.length, aExplicit = 0, aSurv = 0, aHeur = 0;
     for (const e of emails) {
-      if (explicitIds.has(e.id)) { aExplicit++; continue; }
+      if (explicitIds.has(e.id)) { aExplicit++; explicitDeletions.push({ msgid: e.id, account: acct.id, from: e.from, subject: e.subject }); continue; }
       const tag = heuristicIds.has(e.id) ? "heuristic-delete-candidate" : "survivor";
       if (tag === "survivor") aSurv++; else aHeur++;
       emailsById[e.id] = compactEmail(e, acct.id);
@@ -194,7 +195,7 @@ export async function buildBundle({ since, deps, pendingProposals = [] }) {
     perAccount,
   };
 
-  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals, tierRecords: tier.tierRecords };
+  return { generatedAt: now, window: { since: sinceIso }, bundle, emailsById, funnel, warnings, proposals, explicitDeletions, tierRecords: tier.tierRecords };
 }
 
 function funnelLine(f) {

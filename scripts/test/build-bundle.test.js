@@ -105,6 +105,12 @@ describe("buildBundle — assembly + funnel", () => {
     assert.ok(f.reasoningUnits < f.survivors + f.heuristicCandidates, "collapse reduced reasoning units");
   });
 
+  it("surfaces explicit (alwaysDelete) deletions for the skill to soft-delete, without reasoning over them", async () => {
+    const out = await buildBundle({ since: "2026-06-01T00:00:00Z", deps: deps() });
+    assert.deepEqual(out.explicitDeletions, [{ msgid: "d1", account: "biz", from: "spam@x.com", subject: "buy" }]);
+    assert.ok(!out.bundle.find(b => b.msgid === "d1"), "explicit deletion stays out of the reasoning bundle");
+  });
+
   it("warns and continues when one account's fetch throws (no full abort)", async () => {
     const d = {
       accounts: [{ id: "biz", accountType: "business" }, { id: "personal", accountType: "personal" }],
