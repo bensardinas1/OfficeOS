@@ -92,6 +92,13 @@ Then:
    `[{msgid, account}]`) the same way: these are deliberate config kills that never
    reach the reasoner, so the skill must delete them or they would silently survive.
 5. Update `data/issue-assignment-state.json` (`lastAssignedAt[account] = now`).
+6. **Learn (gets cheaper over time).** Write the trashed msgids to a file and run
+   `node scripts/record-deletions.js <file>` — it bumps each trashed sender's
+   consecutive-deletion counter (and resets survivors) in `data/sender-history.json`.
+   Then `node scripts/promote-senders.js --apply` graduates any sender past the
+   threshold (≥5 consecutive, list-unsubscribe, not protected, not a correspondent,
+   not dual-use) to the permanent kill-list as an email-exact rule — so the reasoner
+   never spends judgment on it again. Soft-delete only; promotion never deletes.
 
 ## Status view (default)
 
