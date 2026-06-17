@@ -21,6 +21,7 @@
     "taskCapture": "auto",
     "jobTypes": {
       "owed_risk": {
+        "lookbackHours": 168,
         "sourceCategories": ["action"],
         "failureSignals": [
           "payment failed", "payment was declined", "card was declined",
@@ -32,8 +33,9 @@
         },
         "threshold": { "atRiskMembers": 1 }
       },
-      "handled": {},
+      "handled": { "lookbackHours": 168 },
       "gateway": {
+        "lookbackHours": 720,
         "sourceCategories": ["action"],
         "recognizers": {
           "nmi": {
@@ -45,6 +47,7 @@
         }
       },
       "audit": {
+        "lookbackHours": 2160,
         "sourceCategories": ["action"],
         "recognizers": {
           "secureframe": {
@@ -57,6 +60,7 @@
         }
       },
       "exposed": {
+        "lookbackHours": 2160,
         "sourceCategories": ["action", "fyi"],
         "atRiskSeverities": ["Critical", "High"],
         "recognizers": {
@@ -122,7 +126,7 @@
     },
     "taskCapture": "manual",
     "jobTypes": {
-      "handled": {}
+      "handled": { "lookbackHours": 168 }
     }
   }
 }

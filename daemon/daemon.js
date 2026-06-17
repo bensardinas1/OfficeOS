@@ -29,11 +29,16 @@ function loadConfig() {
 }
 
 function fetchSubprocess(accountId) {
-  const { companies } = loadConfig();
+  const { companies, accountTypes } = loadConfig();
   const account = companies.companies.find(c => c.id === accountId);
   const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
-  // owed_risk scans a wide window; 168h (7d) is a reasonable default for failed-payment recency.
-  const child = spawnSync("node", [join(root, "scripts", script), accountId, "168", "inbox"], {
+  const typeConfig = accountTypes[account.accountType];
+  const jobs = typeConfig?.jobTypes || {};
+  const maxHours = Math.max(168, ...Object.values(jobs).map(j => j.lookbackHours || 0));
+  const args = account.provider === "gmail"
+    ? [join(root, "scripts", script), accountId, String(maxHours), "inbox"]
+    : [join(root, "scripts", script), accountId, String(maxHours), "inbox", "500", "4000"];
+  const child = spawnSync("node", args, {
     encoding: "utf-8", maxBuffer: 50 * 1024 * 1024,
   });
   if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}`);
