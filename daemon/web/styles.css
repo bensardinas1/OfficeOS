@@ -18,3 +18,7 @@ button, .route { font:inherit; border-radius:8px; padding:6px 12px; border:1px s
 .route { background:#23314a; color:var(--accent); }
 .dismiss { background:transparent; color:#8a94a6; }
 .empty { color:#8a94a6; padding:24px; text-align:center; }
+.bulk { display:flex; gap:10px; align-items:center; margin:8px 0; color:#8a94a6; font-size:13px; }
+.bulk-approve { background:#1f3a2a; color:var(--ok); }
+.bulk-approve[disabled] { opacity:.4; cursor:default; }
+.sel { float:right; color:#8a94a6; font-size:12px; }
