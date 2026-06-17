@@ -5,6 +5,7 @@
  */
 import { normalizeOwedRisk } from "./owed-risk.js";
 import { normalizeHandled } from "./handled.js";
+import { regroupStragglers } from "./regroup.js";
 
 function flattenSourceEmails(classified, sourceCategories) {
   const out = [];
@@ -19,7 +20,9 @@ const ADAPTERS = {
   async owed_risk(classified, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.owed_risk;
     const emails = flattenSourceEmails(classified, rules.sourceCategories);
-    return normalizeOwedRisk(emails, account, rules);
+    const items = normalizeOwedRisk(emails, account, rules);
+    if (opts?.reasonerFn) return regroupStragglers(items, account, rules, opts.reasonerFn);
+    return items;
   },
   handled(classified, account, typeConfig) {
     return normalizeHandled(classified, account, typeConfig);
