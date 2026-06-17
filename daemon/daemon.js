@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createStore } from "./store.js";
+import { createAckStore } from "./acknowledge.js";
 import { createApiServer } from "./api.js";
 import { runTick } from "./scheduler.js";
 import { buildCtxFor, resolvePollMs } from "./wiring.js";
@@ -67,6 +68,7 @@ async function main() {
 
   const { companies, accountTypes } = loadConfig();
   const store = createStore(join(root, "data"));
+  const ackStore = createAckStore(join(root, "data"));
   let lastTickAt = null;
 
   const { classify } = await import("../scripts/classify-emails.js");
@@ -79,6 +81,7 @@ async function main() {
     clock: { now: new Date().toISOString() },
     emit,
     reasonerFn: makeReasonerFn(runClaude),
+    getAcks: () => ackStore.getAcks(),
   });
 
   if (once) {
@@ -88,7 +91,7 @@ async function main() {
   }
 
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
-  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt });
+  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() } });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
   });

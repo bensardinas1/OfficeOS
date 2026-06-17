@@ -59,6 +59,13 @@ The `audit` job surfaces Secureframe auditor requests during fieldwork: "Action 
 "new comment / upload" events, one item per test, linking out to Secureframe. It's self-windowing —
 Secureframe only emails during the ~3-month fieldwork window, so outside it nothing surfaces.
 
+## Acknowledge
+
+Findings/tickets (gateway, audit, and exposed) show an **Acknowledge** button. Acknowledging records
+the item's fingerprint locally (`data/acknowledged.json`) and drops it from "needs you" — until the
+finding materially changes (severity, status, title), at which point its fingerprint changes and it
+re-alerts. Acknowledge is local state only: no mail, no external calls.
+
 ## Grouping reasoner (optional)
 
 `owed_risk` groups deterministically (card token, then vendor domain). Emails the
