@@ -1,8 +1,8 @@
 # OfficeOS daemon (Ambient Proposal Panel — core)
 
 Always-on local service that turns the email pipeline into a live world model +
-staged proposal queue, served over `localhost`. Surfaces the `owed_risk` and
-`handled` jobs today (more are config + a normalizer away). Includes a glanceable
+staged proposal queue, served over `localhost`. Surfaces the `owed_risk`,
+`handled`, and `gateway` jobs today (more are config + a normalizer away). Includes a glanceable
 web panel (grouped "needs you" list, approve/dismiss, drill-in workbench) and
 daemon-fired Windows toasts on threshold-crossing changes.
 
@@ -40,8 +40,16 @@ node daemon/daemon.js      # then open http://localhost:8138/
 ## Config
 
 - `config/account-types.json` → `<type>.jobTypes`: `owed_risk` (detection signals,
-  grouping order, threshold) and `handled` (`{}` — derives from triage categories).
+  grouping order, threshold), `handled` (`{}` — derives from triage categories), and
+  `gateway.recognizers.nmi` (subject pattern, ticket URL template, issue keywords, resolved markers).
 - `config/companies.json` → per account: `links.billing_portal`, optional `pollMinutes`.
+
+## Gateway (processing incidents)
+
+The `gateway` job surfaces processing incidents affecting your merchants. v1 recognizes NMI
+support tickets (subject `[NMI Ticket <#>]`), groups the whole thread into one item per ticket,
+marks it resolved (ok) once a closure message appears, and links out to the NMI ticket. Adding
+another processor is a new recognizer under `jobTypes.gateway.recognizers`.
 
 ## Grouping reasoner (optional)
 
