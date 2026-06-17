@@ -43,7 +43,7 @@ appEl.addEventListener("click", (e) => {
   const d = e.target.closest("[data-dismiss]");
   if (d) return void post(`/proposals/${encodeURIComponent(d.dataset.dismiss)}/dismiss`);
   const s = e.target.closest("[data-select]");
-  if (s) { selected = toggle(selected, s.dataset.select); return; }
+  if (s) { selected = toggle(selected, s.dataset.select); draw(); return; }
   const bulk = e.target.closest("[data-bulk-approve]");
   if (bulk) {
     const view = toPanelView(lastModel);
