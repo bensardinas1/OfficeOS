@@ -1,7 +1,12 @@
 /**
  * normalizers/index.js — registry mapping a jobType to an adapter with the
- * uniform signature (classified, account, typeConfig, opts) => Item[].
+ * uniform signature (byFolder, account, typeConfig, opts) => Item[].
  * Adapters localize each job's input prep so adding a job stays additive.
+ *
+ * Multi-folder support: each job may declare `folders: ["inbox", "Security", ...]`
+ * (default ["inbox"]). Pass a classifiedByFolder map { folderName: classified }.
+ * Back-compat: if a single classified (object with a .categories key) is passed to
+ * runNormalizers it is wrapped as { inbox: classified } automatically.
  */
 import { normalizeOwedRisk } from "./owed-risk.js";
 import { normalizeHandled } from "./handled.js";
@@ -20,44 +25,71 @@ function flattenSourceEmails(classified, sourceCategories) {
   return out;
 }
 
+/**
+ * Union source-category emails across one or more folders.
+ */
+function flattenFolders(byFolder, folders, sourceCategories) {
+  const out = [];
+  for (const f of (folders || ["inbox"])) out.push(...flattenSourceEmails(byFolder[f] || { categories: {} }, sourceCategories));
+  return out;
+}
+
+/**
+ * Merge classified objects from one or more folders into a single classified.
+ */
+function mergeClassified(byFolder, folders) {
+  const categories = {};
+  for (const f of (folders || ["inbox"])) {
+    const cats = (byFolder[f] || {}).categories || {};
+    for (const [id, b] of Object.entries(cats)) { (categories[id] ||= { emails: [] }).emails.push(...(b.emails || [])); }
+  }
+  return { categories };
+}
+
 const ADAPTERS = {
-  async owed_risk(classified, account, typeConfig, opts) {
+  async owed_risk(byFolder, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.owed_risk;
-    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
+    const emails = prepareEmails(flattenFolders(byFolder, rules.folders, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     const items = normalizeOwedRisk(emails, account, rules);
     if (opts?.reasonerFn) return regroupStragglers(items, account, rules, opts.reasonerFn);
     return items;
   },
-  handled(classified, account, typeConfig, opts) {
-    return normalizeHandled(classified, account, typeConfig, { lookbackHours: typeConfig.jobTypes.handled?.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
+  handled(byFolder, account, typeConfig, opts) {
+    const rules = typeConfig.jobTypes.handled || {};
+    const merged = mergeClassified(byFolder, rules.folders);
+    return normalizeHandled(merged, account, typeConfig, { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
   },
-  gateway(classified, account, typeConfig, opts) {
+  gateway(byFolder, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.gateway;
-    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
+    const emails = prepareEmails(flattenFolders(byFolder, rules.folders, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     return normalizeGateway(emails, account, rules);
   },
-  audit(classified, account, typeConfig, opts) {
+  audit(byFolder, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.audit;
-    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
+    const emails = prepareEmails(flattenFolders(byFolder, rules.folders, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     return normalizeAudit(emails, account, rules);
   },
-  exposed(classified, account, typeConfig, opts) {
+  exposed(byFolder, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.exposed;
-    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
+    const emails = prepareEmails(flattenFolders(byFolder, rules.folders, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     return normalizeExposed(emails, account, rules);
   },
 };
 
 /**
  * Run every job-type the account's typeConfig enables. Unknown jobTypes are skipped.
- * @param opts { reasonerFn? } passed through to adapters that use it (Task 5).
+ *
+ * @param arg  classifiedByFolder map { folderName: classified } OR a single classified
+ *             (back-compat: single classified with a .categories key is wrapped as { inbox: arg }).
+ * @param opts { reasonerFn? } passed through to adapters that use it.
  */
-export async function runNormalizers(classified, account, typeConfig, opts = {}) {
+export async function runNormalizers(arg, account, typeConfig, opts = {}) {
+  const byFolder = (arg && arg.categories) ? { inbox: arg } : (arg || {});
   const items = [];
   for (const jobType of Object.keys(typeConfig.jobTypes || {})) {
     const adapter = ADAPTERS[jobType];
     if (!adapter) continue;
-    items.push(...await adapter(classified, account, typeConfig, opts));
+    items.push(...await adapter(byFolder, account, typeConfig, opts));
   }
   return items;
 }

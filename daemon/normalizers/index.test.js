@@ -85,4 +85,21 @@ describe("runNormalizers", () => {
     const items = await runNormalizers(classified, { id: "brickell" }, cfg);
     assert.ok(items.some(i => i.jobType === "exposed" && i.group.rootCause === "cve:CVE-2026-48778"));
   });
+
+  it("unions exposed findings across multiple folders", async () => {
+    const cfg = {
+      triageCategories: [{ id: "action", actionable: true }, { id: "ignore", hidden: true }],
+      jobTypes: { exposed: { sourceCategories: ["action"], folders: ["inbox", "Security"], atRiskSeverities: ["Critical","High"], recognizers: {
+        defenderEndpoint: { senderDomains: ["microsoft.com"], senderHints: ["defender-noreply"], subjectMarkers: ["vulnerabilit"], portalUrl: "https://security.microsoft.com" },
+        pciTamper: { senderDomains: ["brickellpay.com"], subjectMarkers: ["tamper detection"], portalUrl: "https://pci.example/dash" },
+      } } },
+    };
+    const byFolder = {
+      inbox:    { categories: { action: { emails: [ { id:"p", from:"noreply@brickellpay.com", subject:"[PCI] Tamper Detection alert - HIGH", preview:'{"severity":"HIGH","compromiseIndicators":["content_injection"]} URL https://x.brickellpay.com/a', received:"2026-06-17T00:00:00Z" } ] } } },
+      Security: { categories: { action: { emails: [ { id:"d", from:"defender-noreply@microsoft.com", subject:"New vulnerabilities notification", preview:"CVE-2026-48778 Severity High", received:"2026-06-17T00:00:00Z" } ] } } },
+    };
+    const items = await runNormalizers(byFolder, { id:"brickell" }, cfg, { nowMs: Date.parse("2026-06-18T00:00:00Z") });
+    assert.ok(items.some(i => i.group.rootCause === "cve:CVE-2026-48778"), "defender from Security folder");
+    assert.ok(items.some(i => i.group.rootCause?.startsWith("pci:")), "pci from inbox folder");
+  });
 });
