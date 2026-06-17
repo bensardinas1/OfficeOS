@@ -41,6 +41,18 @@ describe("renderItemCard", () => {
     const html = renderItemCard(item);
     assert.match(html, /data-route="https:\/\/pay\.example\/portal"/);
   });
+  it("falls back to member subject when there is no vendor (gateway items), no empty commas", () => {
+    const gw = {
+      id: "brickell:gateway:nmi:1260651", account: "brickell",
+      title: "NMI #1260651 · Tokenization Error", status: "at_risk",
+      group: { rootCause: "nmi:1260651", members: [{ subject: "Re: [NMI Ticket 1260651] Tokenization Error", emailId: "c" }] },
+      source: [{ kind: "url", url: "https://support.nmi.com/hc/requests/1260651" }],
+      proposals: [],
+    };
+    const html = renderItemCard(gw);
+    assert.match(html, /Tokenization Error/);
+    assert.doesNotMatch(html, /· <\/div>/);   // meta is not left dangling with an empty member list
+  });
 });
 
 describe("safeUrl", () => {

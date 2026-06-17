@@ -29,7 +29,9 @@ export function renderItemCard(item) {
     ? `<button class="dismiss" data-dismiss="${esc(pending.id)}">dismiss</button>` : "";
   const routeBtn = routeUrl
     ? `<a class="route" target="_blank" rel="noopener" href="${esc(routeUrl)}" data-route="${esc(routeUrl)}">↗ Open</a>` : "";
-  const members = (item.group?.members || []).map(m => esc(m.vendor)).join(", ");
+  // members differ by job: owed_risk has `vendor`, gateway has `subject`. Fall back so
+  // the meta line is never a row of empty commas.
+  const members = (item.group?.members || []).map(m => esc(m.vendor || m.subject || "")).filter(Boolean).join(", ");
   return `<div class="card ${esc(item.status)}" data-item="${esc(item.id)}">`
     + `<label class="sel"><input type="checkbox" data-select="${esc(item.id)}"> select</label>`
     + `<div class="title">${esc(item.title)}</div>`
