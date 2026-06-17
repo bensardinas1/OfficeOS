@@ -1,26 +1,36 @@
 /**
  * exposed/pci-tamper.js — pure recognizer for BrickellPay PCI tamper alerts.
- * Dedupe by change-type + affected URL. Surfaces even from the sandbox host
- * (that is the monitored environment). Links to the PCI dashboard.
+ * The real email body is a JSON payload ({severity, changes:[{type,key,...}],
+ * compromiseIndicators:[...]}) plus a labeled URL. Dedupe by the affected URL +
+ * the set of changed keys, so identical re-alerts merge but distinct tampers
+ * stay separate. Surfaces from the sandbox host (the monitored environment).
  */
 import { senderMatches, shortHash } from "./util.js";
 
+function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s; }
+
 export function recognizePciTamper(email, cfg) {
-  const text = `${email.subject || ""} ${email.preview || ""}`;
   if (!senderMatches(email, cfg)) return null;
+  const text = `${email.subject || ""} ${email.preview || ""}`;
   if (!(cfg.subjectMarkers || []).some(m => text.toLowerCase().includes(m.toLowerCase()))) return null;
-  const sevm = text.match(/SEVERITY\s*[:\s]\s*(HIGH|CRITICAL|MEDIUM|LOW)/i) || text.match(/-\s*(HIGH|CRITICAL|MEDIUM|LOW)\b/i);
-  const sevRaw = sevm ? sevm[1] : "HIGH";
-  const severity = sevRaw.charAt(0).toUpperCase() + sevRaw.slice(1).toLowerCase();
-  const typem = text.match(/TYPE\s*[:\s]\s*([A-Z_]{4,})/);
-  const type = typem ? typem[1] : "TAMPER";
-  const urlm = text.match(/URL\s*[:\s]\s*(https?:\/\/\S+)/i) || text.match(/https?:\/\/\S*brickellpay\.com\S*/i);
+
+  const sevJson = text.match(/"severity"\s*:\s*"(HIGH|CRITICAL|MEDIUM|LOW)"/i);
+  const sevSub = (email.subject || "").match(/-\s*(HIGH|CRITICAL|MEDIUM|LOW)\b/i);
+  const severity = titleCase(sevJson?.[1] || sevSub?.[1] || "HIGH");
+
+  const changeKeys = [...text.matchAll(/"key"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+  const indMatch = text.match(/"compromiseIndicators"\s*:\s*\[([^\]]*)\]/i);
+  const indicators = indMatch ? [...indMatch[1].matchAll(/"([^"]+)"/g)].map(m => m[1]) : [];
+
+  const urlm = text.match(/\bURL\s+(https?:\/\/\S+)/i) || text.match(/https?:\/\/\S*brickellpay\.com\S*/i);
   const url = urlm ? (urlm[1] || urlm[0]).replace(/[).,]+$/, "") : cfg.portalUrl;
+
+  const what = indicators.join(", ") || changeKeys.join(", ") || "content modification";
   return {
     source: "pci_tamper",
-    identityKey: `pci:${type}:${shortHash(url)}`,
+    identityKey: `pci:${shortHash(url + "|" + [...changeKeys].sort().join(","))}`,
     severity,
-    title: `${severity} · PCI tamper: ${type.toLowerCase()}`,
+    title: `${severity} · PCI tamper: ${what}`,
     url: cfg.portalUrl,
   };
 }
