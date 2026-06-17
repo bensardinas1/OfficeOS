@@ -35,6 +35,7 @@ function deps(dir, over = {}) {
     classifyFn: () => classified,
     clock: { now: "2026-06-16T12:00:00Z" },
     emit: () => {},
+    getAcks: over.getAcks || (() => ({})),
     ...over,
   };
 }
@@ -110,6 +111,24 @@ describe("runTick", () => {
       const model = d.store.getModel();
       assert.ok(model.items.some(i => i.jobType === "handled" && i.id === "brickell:handled"));
       assert.ok(model.items.some(i => i.jobType === "owed_risk"));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("stamps fingerprints and applies acks (acked item forced ok)", async () => {
+    const dir = tmp();
+    try {
+      const d = deps(dir);
+      await runTick(d);
+      const model = d.store.getModel();
+      const item = model.items.find(i => i.jobType === "owed_risk");
+      assert.ok(item.fingerprint, "items get a fingerprint");
+
+      const acks = { [item.id]: { fingerprint: item.fingerprint } };
+      const d2 = deps(dir, { store: createStore(dir), getAcks: () => acks });
+      await runTick(d2);
+      const acked = d2.store.getModel().items.find(i => i.id === item.id);
+      assert.equal(acked.status, "ok");
+      assert.equal(acked.acknowledged, true);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
