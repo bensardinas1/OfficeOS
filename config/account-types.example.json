@@ -31,7 +31,8 @@
           "order": ["card", "vendorDomain"]
         },
         "threshold": { "atRiskMembers": 1 }
-      }
+      },
+      "handled": {}
     }
   },
   "personal": {
@@ -68,6 +69,9 @@
       "includeCalendar": false,
       "section": "personal-appendix"
     },
-    "taskCapture": "manual"
+    "taskCapture": "manual",
+    "jobTypes": {
+      "handled": {}
+    }
   }
 }
