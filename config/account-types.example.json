@@ -55,6 +55,34 @@
             "resolvedMarkers": ["ready for review", "marked as passed", "test passed", "no action needed"]
           }
         }
+      },
+      "exposed": {
+        "sourceCategories": ["action", "fyi"],
+        "atRiskSeverities": ["Critical", "High"],
+        "recognizers": {
+          "defenderCloud": {
+            "senderDomains": ["microsoft.com"],
+            "senderHints": ["mssecurity-noreply"],
+            "subjectMarkers": ["attack path"],
+            "portalUrl": "https://portal.azure.com"
+          },
+          "defenderEndpoint": {
+            "senderDomains": ["microsoft.com"],
+            "senderHints": ["defender-noreply"],
+            "subjectMarkers": ["vulnerabilit"],
+            "portalUrl": "https://security.microsoft.com"
+          },
+          "pciTamper": {
+            "senderDomains": ["brickellpay.com"],
+            "subjectMarkers": ["tamper detection"],
+            "portalUrl": "https://sandbox.payments.brickellpay.com/admin/pci/dashboard"
+          },
+          "entra": {
+            "senderDomains": ["microsoft.com"],
+            "senderHints": ["azure-noreply"],
+            "subjectMarkers": ["entra id protection", "identity protection"]
+          }
+        }
       }
     }
   },

@@ -2,7 +2,7 @@
 
 Always-on local service that turns the email pipeline into a live world model +
 staged proposal queue, served over `localhost`. Surfaces the `owed_risk`,
-`handled`, `gateway`, and `audit` jobs today (more are config + a normalizer away). Includes a glanceable
+`handled`, `gateway`, `audit`, and `exposed` jobs today (more are config + a normalizer away). Includes a glanceable
 web panel (grouped "needs you" list, approve/dismiss, drill-in workbench) and
 daemon-fired Windows toasts on threshold-crossing changes.
 
@@ -44,6 +44,8 @@ node daemon/daemon.js      # then open http://localhost:8138/
   `gateway.recognizers.nmi` (subject pattern, ticket URL template, issue keywords, resolved markers).
 - `config/account-types.json` → `<type>.jobTypes.audit.recognizers.secureframe` (sender domains,
   Secureframe base URL, action/comment/resolved markers).
+- `config/account-types.json` → `<type>.jobTypes.exposed.recognizers` (defenderCloud, defenderEndpoint,
+  pciTamper, entra — sender domains/hints, subject markers, portal URLs) + `atRiskSeverities`.
 - `config/companies.json` → per account: `links.billing_portal`, optional `pollMinutes`.
 
 ## Gateway (processing incidents)
@@ -58,6 +60,15 @@ another processor is a new recognizer under `jobTypes.gateway.recognizers`.
 The `audit` job surfaces Secureframe auditor requests during fieldwork: "Action required" and
 "new comment / upload" events, one item per test, linking out to Secureframe. It's self-windowing —
 Secureframe only emails during the ~3-month fieldwork window, so outside it nothing surfaces.
+
+## Exposed (security findings)
+
+The `exposed` job surfaces security findings from four sources — Defender for Cloud attack paths,
+Defender for Endpoint CVEs, BrickellPay PCI tamper alerts, and Entra ID Protection digests — deduped
+by stable ID (attack-path ID, CVE, PCI type+URL, digest counts), severity-ranked, and acknowledgeable.
+Clean Entra digests (0 risky users/sign-ins) are suppressed. Findings link out to the system of record
+(Azure portal / PCI dashboard) — exact resource names live there and are never reconstructed. Adding a
+fifth security source is a new recognizer under `jobTypes.exposed.recognizers`.
 
 ## Acknowledge
 
