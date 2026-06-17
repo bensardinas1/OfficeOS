@@ -25,6 +25,16 @@ describe("regroupStragglers", () => {
     assert.ok(!out.some(i => i.group.rootCause === "ungrouped"));
     assert.ok(out.some(i => i.group.rootCause === "acct:acme"));
     assert.ok(out.some(i => i.group.rootCause === "acct:globex"));
+
+    const acme = out.find(i => i.group.rootCause === "acct:acme");
+    assert.equal(acme.id, "brickell:owed_risk:acct:acme");
+    assert.equal(acme.account, "brickell");
+    assert.equal(acme.status, "at_risk");                 // 1 member >= threshold 1
+    assert.match(acme.title, /1 failed payment/);
+    assert.deepEqual(acme.proposedActions, ["draft_chase", "route:billing_portal"]);
+    assert.ok(acme.source.some(s => s.kind === "thread" && s.emailId === "e1"));
+    assert.ok(acme.source.some(s => s.kind === "url" && s.url === "https://pay.example/portal"));
+    assert.equal(acme.lastChanged, null);
   });
 
   it("returns items unchanged when there is no ungrouped item", async () => {

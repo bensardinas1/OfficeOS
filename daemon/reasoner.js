@@ -4,7 +4,7 @@
  * RAILS: reasoning only — proposes grouping keys, never sends or deletes mail.
  */
 export function buildGroupingPrompt(stragglers) {
-  const lines = stragglers.map(e => `- id=${e.id} | from=${e.from || ""} | subject=${(e.subject || "").replace(/\n/g, " ")}`);
+  const lines = stragglers.map(e => `- id=${e.id ?? e.emailId ?? ""} | from=${e.from || ""} | subject=${(e.subject || "").replace(/\n/g, " ")}`);
   return [
     "You are grouping failed-payment emails by their underlying root cause",
     "(e.g. the same vendor/account behind multiple notices).",

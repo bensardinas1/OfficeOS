@@ -28,7 +28,8 @@ export async function regroupStragglers(items, account, rules, reasonerFn) {
   let mapping = {};
   try {
     mapping = await reasonerFn(ungrouped.group.members) || {};
-  } catch {
+  } catch (err) {
+    process.stderr.write(`[regroup] reasoner failed, keeping deterministic grouping: ${err.message}\n`);
     return items;
   }
   const members = ungrouped.group.members;
