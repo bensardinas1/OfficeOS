@@ -28,6 +28,7 @@ describe("normalizeAudit", () => {
     assert.match(it0.title, /Load balancers/);
     assert.equal(it0.group.members.length, 2);
     assert.ok(it0.source.some(s => s.kind === "url" && /secureframe\.com/.test(s.url)));
+    assert.equal(it0.acknowledgeable, true);
   });
 
   it("returns [] when there are no Secureframe emails", () => {

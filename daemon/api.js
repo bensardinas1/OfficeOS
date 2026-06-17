@@ -33,7 +33,7 @@ function send(res, status, obj) {
 }
 
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -105,6 +105,14 @@ export function createApiServer(deps) {
     if (req.method === "POST" && approveMatch) return approve(decodeURIComponent(approveMatch[1]), res);
     const dismissMatch = path.match(/^\/proposals\/([^/]+)\/dismiss$/);
     if (req.method === "POST" && dismissMatch) return dismiss(decodeURIComponent(dismissMatch[1]), res);
+
+    const ackMatch = path.match(/^\/items\/([^/]+)\/acknowledge$/);
+    if (req.method === "POST" && ackMatch) {
+      const id = decodeURIComponent(ackMatch[1]);
+      const fp = url.searchParams.get("fp") || "";
+      ackStore?.recordAck(id, fp, clock?.now ? clock.now() : new Date().toISOString());
+      return send(res, 200, { ok: true, itemId: id });
+    }
 
     if (req.method === "GET") return serveStatic(path, res);
     return send(res, 404, { error: "not found" });

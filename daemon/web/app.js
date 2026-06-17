@@ -42,6 +42,8 @@ appEl.addEventListener("click", (e) => {
   if (a) return void post(`/proposals/${encodeURIComponent(a.dataset.approve)}/approve`);
   const d = e.target.closest("[data-dismiss]");
   if (d) return void post(`/proposals/${encodeURIComponent(d.dataset.dismiss)}/dismiss`);
+  const ack = e.target.closest("[data-ack]");
+  if (ack) return void post(`/items/${encodeURIComponent(ack.dataset.ack)}/acknowledge?fp=${encodeURIComponent(ack.dataset.fp || "")}`);
   const s = e.target.closest("[data-select]");
   if (s) { selected = toggle(selected, s.dataset.select); draw(); return; }
   const bulk = e.target.closest("[data-bulk-approve]");

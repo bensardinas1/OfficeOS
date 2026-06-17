@@ -39,6 +39,7 @@ describe("normalizeGateway", () => {
     assert.match(open.title, /Tokenization Error/);
     assert.match(open.title, /Path Peptides|1218748/);
     assert.ok(open.source.some(s => s.kind === "url" && s.url === "https://support.nmi.com/hc/requests/1260651"));
+    assert.equal(open.acknowledgeable, true);
   });
 
   it("returns [] when no NMI emails are present", () => {

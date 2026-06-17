@@ -7,6 +7,7 @@
  */
 import { runNormalizers } from "./normalizers/index.js";
 import { stageProposals } from "./proposals.js";
+import { fingerprint, applyAcks } from "./acknowledge.js";
 
 export async function runTick(deps) {
   const { accounts, typeConfigs, store, fetchFn, classifyFn, clock, emit } = deps;
@@ -43,6 +44,10 @@ export async function runTick(deps) {
     nextItems.push(...items);
     accountsState[account.id] = { status: "ok", lastTickAt: clock.now };
   }
+
+  for (const item of nextItems) item.fingerprint = fingerprint(item);
+  const acks = deps.getAcks ? deps.getAcks() : {};
+  nextItems = applyAcks(nextItems, acks);
 
   const nextModel = { generatedAt: clock.now, accounts: accountsState, items: nextItems };
 
