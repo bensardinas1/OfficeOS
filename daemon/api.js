@@ -14,8 +14,18 @@
  *   getLastTickAt() -> ISO string | null
  */
 import { createServer } from "node:http";
+import { readFileSync, existsSync, statSync } from "node:fs";
+import { join, normalize, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveExecutor } from "./executors/index.js";
 import { transition } from "./proposals.js";
+
+const MIME = {
+  ".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml", ".ico": "image/x-icon",
+};
+const DEFAULT_WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "web");
 
 function send(res, status, obj) {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -23,7 +33,7 @@ function send(res, status, obj) {
 }
 
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -63,6 +73,15 @@ export function createApiServer(deps) {
     for (const res of sseClients) res.write(`data: ${JSON.stringify(event)}\n\n`);
   }
 
+  function serveStatic(pathname, res) {
+    const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const full = normalize(join(webDir, rel));
+    if (!full.startsWith(normalize(webDir))) return send(res, 404, { error: "not found" });
+    if (!existsSync(full) || !statSync(full).isFile()) return send(res, 404, { error: "not found" });
+    res.writeHead(200, { "Content-Type": MIME[extname(full).toLowerCase()] || "application/octet-stream" });
+    res.end(readFileSync(full));
+  }
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     const path = url.pathname;
@@ -86,6 +105,7 @@ export function createApiServer(deps) {
     const dismissMatch = path.match(/^\/proposals\/([^/]+)\/dismiss$/);
     if (req.method === "POST" && dismissMatch) return dismiss(decodeURIComponent(dismissMatch[1]), res);
 
+    if (req.method === "GET") return serveStatic(path, res);
     return send(res, 404, { error: "not found" });
   });
 
