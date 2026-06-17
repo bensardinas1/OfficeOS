@@ -1,0 +1,20 @@
+:root { color-scheme: dark; --bg:#0f1420; --card:#16203a; --line:#2a3346; --txt:#cdd9ea; --risk:#e5707a; --ok:#7fd1a0; --accent:#7fb3ff; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); padding:16px; }
+.hdr { font-size:18px; margin-bottom:12px; }
+.hdr .count { font-size:28px; font-weight:700; color:var(--risk); }
+.hdr .sub { color:#8a94a6; font-size:14px; }
+.stale { color:#c9a227; font-size:13px; margin-top:4px; }
+.filters { margin:8px 0; }
+.filters input { width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:#0c111b; color:var(--txt); }
+.list { display:flex; flex-direction:column; gap:10px; }
+.card { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--line); border-radius:10px; padding:12px; }
+.card.at_risk { border-left-color:var(--risk); }
+.card .title { font-weight:600; }
+.card .meta { color:#8a94a6; font-size:12px; margin:4px 0 8px; }
+.actions { display:flex; gap:8px; align-items:center; }
+button, .route { font:inherit; border-radius:8px; padding:6px 12px; border:1px solid var(--line); cursor:pointer; text-decoration:none; }
+.approve { background:#1f3a2a; color:var(--ok); }
+.route { background:#23314a; color:var(--accent); }
+.dismiss { background:transparent; color:#8a94a6; }
+.empty { color:#8a94a6; padding:24px; text-align:center; }
