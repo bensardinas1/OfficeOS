@@ -21,4 +21,13 @@ describe("account-types.example owed_risk schema", () => {
     assert.ok(cfg.business.jobTypes?.handled, "business.jobTypes.handled must exist");
     assert.ok(cfg.personal.jobTypes?.handled, "personal.jobTypes.handled must exist");
   });
+
+  it("business declares a gateway job with an nmi recognizer", () => {
+    const cfg = JSON.parse(readFileSync(join(root, "config/account-types.example.json"), "utf-8"));
+    const g = cfg.business.jobTypes?.gateway;
+    assert.ok(g, "business.jobTypes.gateway must exist");
+    assert.ok(Array.isArray(g.sourceCategories) && g.sourceCategories.length > 0);
+    assert.ok(g.recognizers?.nmi?.subjectPattern);
+    assert.ok(g.recognizers.nmi.ticketUrlTemplate.includes("{ticket}"));
+  });
 });

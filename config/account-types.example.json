@@ -32,7 +32,18 @@
         },
         "threshold": { "atRiskMembers": 1 }
       },
-      "handled": {}
+      "handled": {},
+      "gateway": {
+        "sourceCategories": ["action"],
+        "recognizers": {
+          "nmi": {
+            "subjectPattern": "\\[NMI Ticket (\\d+)\\]",
+            "ticketUrlTemplate": "https://support.nmi.com/hc/requests/{ticket}",
+            "issueKeywords": ["Settlement Batch Failure", "Tokenization Error", "Chargeback", "Decline", "Refund"],
+            "resolvedMarkers": ["closing this ticket", "ticket has been closed", "has been resolved", "marking this resolved"]
+          }
+        }
+      }
     }
   },
   "personal": {
