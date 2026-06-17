@@ -1,8 +1,9 @@
 # OfficeOS daemon (Ambient Proposal Panel — core)
 
 Always-on local service that turns the email pipeline into a live world model +
-staged proposal queue, served over `localhost`. Headless in this milestone
-(REST/SSE only; the web panel and toasts come in later plans).
+staged proposal queue, served over `localhost`. Includes a glanceable web panel
+(grouped "needs you" list, approve/dismiss, drill-in workbench) and daemon-fired
+Windows toasts on threshold-crossing changes.
 
 ## Run
 
@@ -19,6 +20,21 @@ node daemon/daemon.js --once     # run one tick, print summary, exit
 - `GET  /events` — SSE; emits `{type:"update"}` when a tick changes the model
 - `POST /proposals/:id/approve` — approve + execute (route → URL, draft_chase → drafts)
 - `POST /proposals/:id/dismiss` — dismiss
+
+## Panel
+
+Open `http://localhost:8138/` (served by the daemon). It live-updates via SSE,
+shows what needs you grouped by account, and lets you approve/dismiss proposals
+or multi-select for a bulk approve. Pin it as a standalone window for an ambient
+glance. Toasts fire automatically when new at-risk items appear or an account
+goes stale.
+
+Dev preview without live email:
+
+```bash
+node daemon/seed-demo.js   # seed a demo world model into ./data
+node daemon/daemon.js      # then open http://localhost:8138/
+```
 
 ## Config
 

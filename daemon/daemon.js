@@ -14,6 +14,7 @@ import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 import { runTick } from "./scheduler.js";
 import { buildCtxFor, resolvePollMs } from "./wiring.js";
+import { notify } from "./notifier.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_PORT = 8138;
@@ -78,12 +79,15 @@ async function main() {
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
   const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt });
   server.listen(port, "127.0.0.1", () => {
-    process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}` }) + "\n");
+    process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
   });
 
   async function tick() {
     try {
-      await runTick(deps((e) => server.broadcastUpdate(e)));
+      await runTick(deps((e) => {
+        server.broadcastUpdate(e);
+        if (e?.notify) notify(e.notify); // fire-and-forget; never throws
+      }));
       lastTickAt = new Date().toISOString();
     } catch (err) {
       process.stderr.write(`tick error: ${err.message}\n`);

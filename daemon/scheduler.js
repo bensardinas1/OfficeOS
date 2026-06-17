@@ -23,6 +23,7 @@ export async function runTick(deps) {
   const prevItemsById = new Map(prev.items.map(i => [i.id, i]));
   const accountsState = { ...prev.accounts };
   const warnings = [];
+  const staleFlips = [];
   let nextItems = [];
 
   for (const account of accounts) {
@@ -33,6 +34,8 @@ export async function runTick(deps) {
       emails = await fetchFn(account.id);
     } catch (err) {
       warnings.push(`[${account.id}] fetch failed: ${err.message}`);
+      const wasStale = prev.accounts?.[account.id]?.status === "stale";
+      if (!wasStale) staleFlips.push(account.id);
       accountsState[account.id] = { status: "stale", lastTickAt: clock.now };
       // retain last-good items for this account
       nextItems.push(...prev.items.filter(i => i.account === account.id));
@@ -53,6 +56,11 @@ export async function runTick(deps) {
 
   const nextModel = { generatedAt: clock.now, accounts: accountsState, items: nextItems };
 
+  // newAtRisk: items at_risk now that were absent or not-at_risk before
+  const newAtRisk = nextItems.filter(i =>
+    i.status === "at_risk" && prevItemsById.get(i.id)?.status !== "at_risk"
+  );
+
   // stage proposals for all items (per their account)
   let queue = store.getQueue();
   for (const account of accounts) {
@@ -66,7 +74,9 @@ export async function runTick(deps) {
 
   store.saveModel(nextModel);
   store.saveQueue(queue);
-  if (changed) emit({ type: "update", at: clock.now });
 
-  return { changed, warnings, itemCount: nextItems.length };
+  const notify = { newAtRisk, staleFlips };
+  if (changed || staleFlips.length) emit({ type: "update", at: clock.now, notify });
+
+  return { changed, warnings, itemCount: nextItems.length, notify };
 }
