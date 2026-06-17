@@ -22,3 +22,4 @@ button, .route { font:inherit; border-radius:8px; padding:6px 12px; border:1px s
 .bulk-approve { background:#1f3a2a; color:var(--ok); }
 .bulk-approve[disabled] { opacity:.4; cursor:default; }
 .sel { float:right; color:#8a94a6; font-size:12px; }
+.ack { background:#23314a; color:#cdd9ea; }

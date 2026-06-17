@@ -29,6 +29,8 @@ export function renderItemCard(item) {
     ? `<button class="dismiss" data-dismiss="${esc(pending.id)}">dismiss</button>` : "";
   const routeBtn = routeUrl
     ? `<a class="route" target="_blank" rel="noopener" href="${esc(routeUrl)}" data-route="${esc(routeUrl)}">↗ Open</a>` : "";
+  const ackBtn = (item.acknowledgeable && !item.acknowledged)
+    ? `<button class="ack" data-ack="${esc(item.id)}" data-fp="${esc(item.fingerprint || "")}">Acknowledge</button>` : "";
   // members differ by job: owed_risk has `vendor`, gateway has `subject`. Fall back so
   // the meta line is never a row of empty commas.
   const members = (item.group?.members || []).map(m => esc(m.vendor || m.subject || "")).filter(Boolean).join(", ");
@@ -36,7 +38,7 @@ export function renderItemCard(item) {
     + `<label class="sel"><input type="checkbox" data-select="${esc(item.id)}"> select</label>`
     + `<div class="title">${esc(item.title)}</div>`
     + `<div class="meta">${esc(item.group?.rootCause || "")} · ${members}</div>`
-    + `<div class="actions">${approveBtn}${routeBtn}${dismissBtn}</div></div>`;
+    + `<div class="actions">${approveBtn}${routeBtn}${ackBtn}${dismissBtn}</div></div>`;
 }
 
 export function renderSelectControls(selectedCount) {

@@ -41,6 +41,16 @@ describe("renderItemCard", () => {
     const html = renderItemCard(item);
     assert.match(html, /data-route="https:\/\/pay\.example\/portal"/);
   });
+  it("renders an Acknowledge button for acknowledgeable items carrying a fingerprint", () => {
+    const ackable = { ...item, proposals: [], acknowledgeable: true, fingerprint: "fp1" };
+    const html = renderItemCard(ackable);
+    assert.match(html, /data-ack="brickell:owed_risk:card_4821"/);
+    assert.match(html, /data-fp="fp1"/);
+    assert.match(html, /Acknowledge/);
+  });
+  it("omits Acknowledge for non-acknowledgeable items", () => {
+    assert.doesNotMatch(renderItemCard(item), /data-ack=/);
+  });
   it("falls back to member subject when there is no vendor (gateway items), no empty commas", () => {
     const gw = {
       id: "brickell:gateway:nmi:1260651", account: "brickell",
