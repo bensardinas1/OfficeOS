@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard } from "./render.js";
+import { renderHeader, renderItemCard, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -30,5 +30,25 @@ describe("renderItemCard", () => {
     const html = renderItemCard(evil);
     assert.doesNotMatch(html, /<img src=x/);
     assert.match(html, /&lt;img/);
+  });
+  it("does not render a javascript: url as a route link", () => {
+    const evil = { ...item, source: [{ kind: "url", url: "javascript:alert(1)" }] };
+    const html = renderItemCard(evil);
+    assert.doesNotMatch(html, /javascript:alert/);
+    assert.doesNotMatch(html, /data-route=/);
+  });
+  it("renders an https route link normally", () => {
+    const html = renderItemCard(item);
+    assert.match(html, /data-route="https:\/\/pay\.example\/portal"/);
+  });
+});
+
+describe("safeUrl", () => {
+  it("allows http(s) and rejects everything else", () => {
+    assert.equal(safeUrl("https://x.com"), "https://x.com");
+    assert.equal(safeUrl("http://x.com"), "http://x.com");
+    assert.equal(safeUrl("javascript:alert(1)"), null);
+    assert.equal(safeUrl("data:text/html,x"), null);
+    assert.equal(safeUrl(undefined), null);
   });
 });

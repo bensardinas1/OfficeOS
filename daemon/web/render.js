@@ -7,17 +7,21 @@ export function esc(s) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+export function safeUrl(url) {
+  return /^https?:\/\//i.test(String(url || "")) ? url : null;
+}
+
 export function renderHeader(view) {
   const stale = view.staleAccounts?.length
     ? `<div class="stale">⚠ couldn't refresh: ${view.staleAccounts.map(esc).join(", ")}</div>`
     : "";
-  return `<div class="hdr"><span class="count">${view.needsYouCount}</span> need you`
-    + ` <span class="sub">· ${view.pendingCount} pending</span>${stale}</div>`;
+  return `<div class="hdr"><span class="count">${esc(view.needsYouCount)}</span> need you`
+    + ` <span class="sub">· ${esc(view.pendingCount)} pending</span>${stale}</div>`;
 }
 
 export function renderItemCard(item) {
   const pending = (item.proposals || []).find(p => p.state === "pending");
-  const routeUrl = (item.source || []).find(s => s.kind === "url")?.url;
+  const routeUrl = safeUrl((item.source || []).find(s => s.kind === "url")?.url);
   const approveBtn = pending
     ? `<button class="approve" data-approve="${esc(pending.id)}">✓ Approve ${esc(pending.action)}</button>`
     : "";

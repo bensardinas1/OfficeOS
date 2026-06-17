@@ -3,7 +3,7 @@
  * on SSE /events, and posts approve/dismiss. No business logic lives here.
  */
 import { toPanelView, filterItems } from "./view-model.js";
-import { renderHeader, renderItemCard } from "./render.js";
+import { renderHeader, renderItemCard, esc } from "./render.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
@@ -22,7 +22,7 @@ function draw() {
   appEl.innerHTML =
     renderHeader(view)
     + `<div class="filters">
-         <input id="q" placeholder="filter…" value="${ui.query.replace(/"/g, "&quot;")}">
+         <input id="q" placeholder="filter…" value="${esc(ui.query)}">
        </div>`
     + `<div class="list">${items.map(renderItemCard).join("") || '<div class="empty">All clear.</div>'}</div>`;
 }
