@@ -71,4 +71,18 @@ describe("runNormalizers", () => {
     const items = await runNormalizers(classified, { id: "brickell" }, cfg);
     assert.ok(items.some(i => i.jobType === "audit" && /Backups/.test(i.title)));
   });
+
+  it("runs the exposed job when configured", async () => {
+    const cfg = {
+      triageCategories: [{ id: "action", actionable: true }, { id: "ignore", hidden: true }],
+      jobTypes: { exposed: { sourceCategories: ["action"], atRiskSeverities: ["Critical", "High"], recognizers: {
+        defenderEndpoint: { senderDomains: ["microsoft.com"], senderHints: ["defender-noreply"], subjectMarkers: ["vulnerabilit"], portalUrl: "https://security.microsoft.com" },
+      } } },
+    };
+    const classified = { categories: { action: { emails: [
+      { id: "x", from: "defender-noreply@microsoft.com", subject: "New vulnerabilities notification from Microsoft Defender for Endpoint", preview: "CVE-2026-48778 Severity High", receivedAt: "2026-06-09T00:00:00Z" },
+    ] } } };
+    const items = await runNormalizers(classified, { id: "brickell" }, cfg);
+    assert.ok(items.some(i => i.jobType === "exposed" && i.group.rootCause === "cve:CVE-2026-48778"));
+  });
 });
