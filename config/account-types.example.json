@@ -18,7 +18,21 @@
       "includeCalendar": true,
       "section": "main"
     },
-    "taskCapture": "auto"
+    "taskCapture": "auto",
+    "jobTypes": {
+      "owed_risk": {
+        "sourceCategories": ["action"],
+        "failureSignals": [
+          "payment failed", "payment was declined", "card was declined",
+          "unable to process", "past due", "payment unsuccessful",
+          "could not be processed", "your card on file"
+        ],
+        "grouping": {
+          "order": ["card", "vendorDomain"]
+        },
+        "threshold": { "atRiskMembers": 1 }
+      }
+    }
   },
   "personal": {
     "label": "Personal",

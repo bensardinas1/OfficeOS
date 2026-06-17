@@ -47,3 +47,6 @@ logs/
 
 # Git worktrees
 .worktrees/
+
+# Brainstorm visual-companion artifacts (local only)
+.superpowers/
