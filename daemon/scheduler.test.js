@@ -9,12 +9,13 @@ import { runTick } from "./scheduler.js";
 function tmp() { return mkdtempSync(join(tmpdir(), "officeos-sched-")); }
 
 const account = { id: "brickell", accountType: "business", links: { billing_portal: "https://pay.example/portal" } };
-const typeConfigs = { business: { jobTypes: { owed_risk: {
-  sourceCategories: ["action"],
-  failureSignals: ["payment failed", "was declined"],
-  grouping: { order: ["card", "vendorDomain"] },
-  threshold: { atRiskMembers: 1 },
-} } } };
+const typeConfigs = { business: {
+  triageCategories: [{ id: "action", actionable: true }, { id: "fyi" }, { id: "ignore", hidden: true }],
+  jobTypes: {
+    owed_risk: { sourceCategories: ["action"], failureSignals: ["payment failed", "was declined"], grouping: { order: ["card", "vendorDomain"] }, threshold: { atRiskMembers: 1 } },
+    handled: {},
+  },
+} };
 
 // classifyFn returns category buckets like the existing classify() does.
 const classified = { categories: {
@@ -98,6 +99,17 @@ describe("runTick", () => {
       const summary = await runTick(d);
       assert.deepEqual(summary.notify.staleFlips, ["brickell"]);
       assert.equal(events.length, 1); // emitted despite items being retained/unchanged
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("produces a handled summary item alongside owed_risk", async () => {
+    const dir = tmp();
+    try {
+      const d = deps(dir);
+      await runTick(d);
+      const model = d.store.getModel();
+      assert.ok(model.items.some(i => i.jobType === "handled" && i.id === "brickell:handled"));
+      assert.ok(model.items.some(i => i.jobType === "owed_risk"));
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
