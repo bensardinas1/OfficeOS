@@ -15,7 +15,7 @@
  */
 import { createServer } from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { join, normalize, extname, dirname } from "node:path";
+import { join, normalize, extname, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveExecutor } from "./executors/index.js";
 import { transition } from "./proposals.js";
@@ -76,7 +76,8 @@ export function createApiServer(deps) {
   function serveStatic(pathname, res) {
     const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
     const full = normalize(join(webDir, rel));
-    if (!full.startsWith(normalize(webDir))) return send(res, 404, { error: "not found" });
+    const root = normalize(webDir);
+    if (full !== root && !full.startsWith(root + sep)) return send(res, 404, { error: "not found" });
     if (!existsSync(full) || !statSync(full).isFile()) return send(res, 404, { error: "not found" });
     res.writeHead(200, { "Content-Type": MIME[extname(full).toLowerCase()] || "application/octet-stream" });
     res.end(readFileSync(full));

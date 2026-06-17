@@ -14,6 +14,9 @@ before(async () => {
   mkdirSync(webDir, { recursive: true });
   writeFileSync(join(webDir, "index.html"), "<!doctype html><title>Panel</title><div id=app></div>");
   writeFileSync(join(webDir, "app.js"), "export const x = 1;");
+  const sibling = join(dir, "web-secret");
+  mkdirSync(sibling, { recursive: true });
+  writeFileSync(join(sibling, "leak.txt"), "SECRET");
   const store = createStore(dir);
   store.saveModel({ generatedAt: "t", accounts: {}, items: [] });
   store.saveQueue({ proposals: [] });
@@ -42,6 +45,10 @@ describe("static serving", () => {
   });
   it("blocks path traversal", async () => {
     const res = await fetch(`${base}/..%2f..%2fpackage.json`);
+    assert.equal(res.status, 404);
+  });
+  it("blocks a sibling directory that shares the web dir name prefix", async () => {
+    const res = await fetch(`${base}/..%2fweb-secret%2fleak.txt`);
     assert.equal(res.status, 404);
   });
 });
