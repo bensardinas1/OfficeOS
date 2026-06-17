@@ -1,9 +1,10 @@
 # OfficeOS daemon (Ambient Proposal Panel — core)
 
 Always-on local service that turns the email pipeline into a live world model +
-staged proposal queue, served over `localhost`. Includes a glanceable web panel
-(grouped "needs you" list, approve/dismiss, drill-in workbench) and daemon-fired
-Windows toasts on threshold-crossing changes.
+staged proposal queue, served over `localhost`. Surfaces the `owed_risk` and
+`handled` jobs today (more are config + a normalizer away). Includes a glanceable
+web panel (grouped "needs you" list, approve/dismiss, drill-in workbench) and
+daemon-fired Windows toasts on threshold-crossing changes.
 
 ## Run
 
@@ -38,8 +39,16 @@ node daemon/daemon.js      # then open http://localhost:8138/
 
 ## Config
 
-- `config/account-types.json` → `<type>.jobTypes.owed_risk` (detection signals, grouping order, threshold)
-- `config/companies.json` → per account: `links.billing_portal`, optional `pollMinutes`
+- `config/account-types.json` → `<type>.jobTypes`: `owed_risk` (detection signals,
+  grouping order, threshold) and `handled` (`{}` — derives from triage categories).
+- `config/companies.json` → per account: `links.billing_portal`, optional `pollMinutes`.
+
+## Grouping reasoner (optional)
+
+`owed_risk` groups deterministically (card token, then vendor domain). Emails the
+rules can't group are passed to the `claude` CLI to propose a grouping; the split
+is only applied when the model returns ≥2 confident keys. If `claude` isn't
+installed (or hangs past 30s), grouping silently stays deterministic.
 
 ## Safety rails (enforced by `daemon/executors/rails-guard.test.js`)
 

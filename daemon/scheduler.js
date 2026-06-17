@@ -5,17 +5,8 @@
  * deps: { accounts, typeConfigs, store, fetchFn(accountId), classifyFn(emails, account),
  *         clock:{now}, emit(event) }
  */
-import { normalizeOwedRisk } from "./normalizers/owed-risk.js";
+import { runNormalizers } from "./normalizers/index.js";
 import { stageProposals } from "./proposals.js";
-
-function flattenSourceEmails(classified, sourceCategories) {
-  const out = [];
-  for (const cat of sourceCategories) {
-    const bucket = classified.categories?.[cat];
-    if (bucket?.emails) out.push(...bucket.emails);
-  }
-  return out;
-}
 
 export async function runTick(deps) {
   const { accounts, typeConfigs, store, fetchFn, classifyFn, clock, emit } = deps;
@@ -27,8 +18,8 @@ export async function runTick(deps) {
   let nextItems = [];
 
   for (const account of accounts) {
-    const jobRules = typeConfigs[account.accountType]?.jobTypes?.owed_risk;
-    if (!jobRules) continue;
+    const typeConfig = typeConfigs[account.accountType];
+    if (!typeConfig?.jobTypes) continue;
     let emails;
     try {
       emails = await fetchFn(account.id);
@@ -42,8 +33,7 @@ export async function runTick(deps) {
       continue;
     }
     const classified = classifyFn(emails, account);
-    const sourceEmails = flattenSourceEmails(classified, jobRules.sourceCategories);
-    const items = normalizeOwedRisk(sourceEmails, account, jobRules);
+    const items = await runNormalizers(classified, account, typeConfig, { reasonerFn: deps.reasonerFn });
     // stamp lastChanged: keep prior timestamp if the item is unchanged
     for (const item of items) {
       const before = prevItemsById.get(item.id);

@@ -15,4 +15,10 @@ describe("account-types.example owed_risk schema", () => {
     assert.ok(Array.isArray(job.failureSignals) && job.failureSignals.length > 0);
     assert.ok(job.grouping && Array.isArray(job.grouping.order));
   });
+
+  it("both account types declare a handled job", () => {
+    const cfg = JSON.parse(readFileSync(join(root, "config/account-types.example.json"), "utf-8"));
+    assert.ok(cfg.business.jobTypes?.handled, "business.jobTypes.handled must exist");
+    assert.ok(cfg.personal.jobTypes?.handled, "personal.jobTypes.handled must exist");
+  });
 });

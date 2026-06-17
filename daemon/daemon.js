@@ -15,6 +15,7 @@ import { createApiServer } from "./api.js";
 import { runTick } from "./scheduler.js";
 import { buildCtxFor, resolvePollMs } from "./wiring.js";
 import { notify } from "./notifier.js";
+import { makeReasonerFn } from "./claude-reasoner.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_PORT = 8138;
@@ -36,6 +37,15 @@ function fetchSubprocess(accountId) {
   });
   if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}`);
   return JSON.parse(child.stdout);
+}
+
+function runClaude(prompt) {
+  // timeout bounds the blast radius if `claude` hangs (e.g. waiting on auth);
+  // a timed-out spawn sets child.error, which the caller turns into a throw →
+  // makeReasonerFn catches it → regroup keeps deterministic grouping.
+  const child = spawnSync("claude", ["-p", prompt], { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024, timeout: 30000 });
+  if (child.error || child.status !== 0) throw new Error(child.stderr || "claude invocation failed");
+  return child.stdout;
 }
 
 function makeSaveDraftFn(account) {
@@ -68,6 +78,7 @@ async function main() {
     classifyFn: (emails, account) => classify(emails, account.id),
     clock: { now: new Date().toISOString() },
     emit,
+    reasonerFn: makeReasonerFn(runClaude),
   });
 
   if (once) {
