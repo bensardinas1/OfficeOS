@@ -55,4 +55,20 @@ describe("runNormalizers", () => {
     const items = await runNormalizers(classified, { id: "brickell" }, cfg);
     assert.ok(items.some(i => i.jobType === "gateway" && i.group.rootCause === "nmi:1258855"));
   });
+
+  it("runs the audit job when configured", async () => {
+    const cfg = {
+      triageCategories: [{ id: "action", actionable: true }, { id: "ignore", hidden: true }],
+      jobTypes: { audit: { sourceCategories: ["action"], recognizers: { secureframe: {
+        senderDomains: ["secureframe.com"], baseUrl: "https://app.secureframe.com",
+        actionRequiredMarkers: ["action required"], commentMarkers: ["new comment"], resolvedMarkers: [],
+      } } } },
+    };
+    const classified = { categories: { action: { emails: [
+      { id: "x", from: "hello@secureframe.com", subject: "Your auditor marked a test as Action required",
+        preview: "updated the test Backups to Action required.", receivedAt: "2026-06-15T00:00:00Z" },
+    ] } } };
+    const items = await runNormalizers(classified, { id: "brickell" }, cfg);
+    assert.ok(items.some(i => i.jobType === "audit" && /Backups/.test(i.title)));
+  });
 });
