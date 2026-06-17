@@ -28,20 +28,16 @@ function loadConfig() {
   return { companies, accountTypes };
 }
 
-function fetchSubprocess(accountId) {
-  const { companies, accountTypes } = loadConfig();
+function fetchSubprocess(accountId, folder, hours) {
+  const { companies } = loadConfig();
   const account = companies.companies.find(c => c.id === accountId);
   const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
-  const typeConfig = accountTypes[account.accountType];
-  const jobs = typeConfig?.jobTypes || {};
-  const maxHours = Math.max(168, ...Object.values(jobs).map(j => j.lookbackHours || 0));
-  const args = account.provider === "gmail"
-    ? [join(root, "scripts", script), accountId, String(maxHours), "inbox"]
-    : [join(root, "scripts", script), accountId, String(maxHours), "inbox", "500", "4000"];
+  const base = [join(root, "scripts", script), accountId, String(hours), folder];
+  const args = account.provider === "gmail" ? base : [...base, "500", "4000"];
   const child = spawnSync("node", args, {
     encoding: "utf-8", maxBuffer: 50 * 1024 * 1024,
   });
-  if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}`);
+  if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}/${folder}`);
   return JSON.parse(child.stdout);
 }
 
@@ -81,7 +77,7 @@ async function main() {
     accounts: companies.companies,
     typeConfigs: accountTypes,
     store,
-    fetchFn: async (accountId) => fetchSubprocess(accountId),
+    fetchFn: async (accountId, folder, hours) => fetchSubprocess(accountId, folder, hours),
     classifyFn: (emails, account) => classify(emails, account.id),
     clock: { now: new Date().toISOString() },
     emit,

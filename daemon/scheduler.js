@@ -21,11 +21,28 @@ export async function runTick(deps) {
   for (const account of accounts) {
     const typeConfig = typeConfigs[account.accountType];
     if (!typeConfig?.jobTypes) continue;
-    let emails;
-    try {
-      emails = await fetchFn(account.id);
-    } catch (err) {
-      warnings.push(`[${account.id}] fetch failed: ${err.message}`);
+
+    // folder -> max lookbackHours across jobs using it
+    const folderHours = {};
+    for (const jcfg of Object.values(typeConfig.jobTypes)) {
+      const lb = jcfg.lookbackHours || 168;
+      for (const f of (jcfg.folders || ["inbox"])) folderHours[f] = Math.max(folderHours[f] || 168, lb);
+    }
+
+    const classifiedByFolder = {};
+    let inboxFailed = false;
+    for (const [folder, hrs] of Object.entries(folderHours)) {
+      try {
+        const emails = await fetchFn(account.id, folder, hrs);
+        classifiedByFolder[folder] = classifyFn(emails, account);
+      } catch (err) {
+        warnings.push(`[${account.id}/${folder}] fetch failed: ${err.message}`);
+        classifiedByFolder[folder] = { categories: {} };
+        if (folder === "inbox") inboxFailed = true;
+      }
+    }
+
+    if (inboxFailed) {
       const wasStale = prev.accounts?.[account.id]?.status === "stale";
       if (!wasStale) staleFlips.push(account.id);
       accountsState[account.id] = { status: "stale", lastTickAt: clock.now };
@@ -33,8 +50,8 @@ export async function runTick(deps) {
       nextItems.push(...prev.items.filter(i => i.account === account.id));
       continue;
     }
-    const classified = classifyFn(emails, account);
-    const items = await runNormalizers(classified, account, typeConfig, { reasonerFn: deps.reasonerFn, nowMs: Date.parse(clock.now) });
+
+    const items = await runNormalizers(classifiedByFolder, account, typeConfig, { reasonerFn: deps.reasonerFn, nowMs: Date.parse(clock.now) });
     // stamp lastChanged: keep prior timestamp if the item is unchanged
     for (const item of items) {
       const before = prevItemsById.get(item.id);

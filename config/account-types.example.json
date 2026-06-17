@@ -61,6 +61,7 @@
       },
       "exposed": {
         "lookbackHours": 2160,
+        "folders": ["inbox", "Security"],
         "sourceCategories": ["action", "fyi"],
         "atRiskSeverities": ["Critical", "High"],
         "recognizers": {
