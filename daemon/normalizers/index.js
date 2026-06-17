@@ -6,6 +6,7 @@
 import { normalizeOwedRisk } from "./owed-risk.js";
 import { normalizeHandled } from "./handled.js";
 import { regroupStragglers } from "./regroup.js";
+import { normalizeGateway } from "./gateway.js";
 
 function flattenSourceEmails(classified, sourceCategories) {
   const out = [];
@@ -26,6 +27,11 @@ const ADAPTERS = {
   },
   handled(classified, account, typeConfig) {
     return normalizeHandled(classified, account, typeConfig);
+  },
+  gateway(classified, account, typeConfig) {
+    const rules = typeConfig.jobTypes.gateway;
+    const emails = flattenSourceEmails(classified, rules.sourceCategories);
+    return normalizeGateway(emails, account, rules);
   },
 };
 
