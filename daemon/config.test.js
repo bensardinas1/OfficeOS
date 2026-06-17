@@ -39,4 +39,15 @@ describe("account-types.example owed_risk schema", () => {
     assert.ok(a.recognizers?.secureframe?.senderDomains?.includes("secureframe.com"));
     assert.ok(a.recognizers.secureframe.baseUrl);
   });
+
+  it("business declares an exposed job with four security recognizers", () => {
+    const cfg = JSON.parse(readFileSync(join(root, "config/account-types.example.json"), "utf-8"));
+    const e = cfg.business.jobTypes?.exposed;
+    assert.ok(e, "business.jobTypes.exposed must exist");
+    assert.ok(Array.isArray(e.sourceCategories) && e.sourceCategories.length > 0);
+    for (const k of ["defenderCloud", "defenderEndpoint", "pciTamper", "entra"]) {
+      assert.ok(e.recognizers?.[k], `recognizer ${k} must exist`);
+    }
+    assert.ok(Array.isArray(e.atRiskSeverities) && e.atRiskSeverities.includes("High"));
+  });
 });
