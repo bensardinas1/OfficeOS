@@ -40,7 +40,10 @@ function fetchSubprocess(accountId) {
 }
 
 function runClaude(prompt) {
-  const child = spawnSync("claude", ["-p", prompt], { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+  // timeout bounds the blast radius if `claude` hangs (e.g. waiting on auth);
+  // a timed-out spawn sets child.error, which the caller turns into a throw →
+  // makeReasonerFn catches it → regroup keeps deterministic grouping.
+  const child = spawnSync("claude", ["-p", prompt], { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024, timeout: 30000 });
   if (child.error || child.status !== 0) throw new Error(child.stderr || "claude invocation failed");
   return child.stdout;
 }
