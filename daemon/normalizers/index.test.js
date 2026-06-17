@@ -38,4 +38,21 @@ describe("runNormalizers", () => {
     assert.ok(items.length >= 2);
     assert.equal(called, false);
   });
+
+  it("runs the gateway job when configured", async () => {
+    const cfg = {
+      triageCategories: [{ id: "action", actionable: true }, { id: "ignore", hidden: true }],
+      jobTypes: { gateway: { sourceCategories: ["action"], recognizers: { nmi: {
+        subjectPattern: "\\[NMI Ticket (\\d+)\\]",
+        ticketUrlTemplate: "https://support.nmi.com/hc/requests/{ticket}",
+        issueKeywords: ["Settlement Batch Failure"],
+        resolvedMarkers: ["closing this ticket"],
+      } } } },
+    };
+    const classified = { categories: { action: { emails: [
+      { id: "x", subject: "Re: [NMI Ticket 1258855] Settlement Batch Failure", preview: "open issue", receivedAt: "2026-06-10T00:00:00Z" },
+    ] } } };
+    const items = await runNormalizers(classified, { id: "brickell" }, cfg);
+    assert.ok(items.some(i => i.jobType === "gateway" && i.group.rootCause === "nmi:1258855"));
+  });
 });
