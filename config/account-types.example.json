@@ -43,6 +43,18 @@
             "resolvedMarkers": ["closing this ticket", "ticket has been closed", "has been resolved", "marking this resolved"]
           }
         }
+      },
+      "audit": {
+        "sourceCategories": ["action"],
+        "recognizers": {
+          "secureframe": {
+            "senderDomains": ["secureframe.com"],
+            "baseUrl": "https://app.secureframe.com",
+            "actionRequiredMarkers": ["action required"],
+            "commentMarkers": ["new comment", "added a comment", "added a new comment"],
+            "resolvedMarkers": ["ready for review", "marked as passed", "test passed", "no action needed"]
+          }
+        }
       }
     }
   },

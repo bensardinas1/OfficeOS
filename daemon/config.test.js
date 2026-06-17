@@ -30,4 +30,13 @@ describe("account-types.example owed_risk schema", () => {
     assert.ok(g.recognizers?.nmi?.subjectPattern);
     assert.ok(g.recognizers.nmi.ticketUrlTemplate.includes("{ticket}"));
   });
+
+  it("business declares an audit job with a secureframe recognizer", () => {
+    const cfg = JSON.parse(readFileSync(join(root, "config/account-types.example.json"), "utf-8"));
+    const a = cfg.business.jobTypes?.audit;
+    assert.ok(a, "business.jobTypes.audit must exist");
+    assert.ok(Array.isArray(a.sourceCategories) && a.sourceCategories.length > 0);
+    assert.ok(a.recognizers?.secureframe?.senderDomains?.includes("secureframe.com"));
+    assert.ok(a.recognizers.secureframe.baseUrl);
+  });
 });
