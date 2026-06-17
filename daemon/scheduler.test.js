@@ -77,4 +77,27 @@ describe("runTick", () => {
       assert.equal(events.length, 1);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it("reports newAtRisk items in the emit payload and return value", async () => {
+    const dir = tmp();
+    try {
+      const events = [];
+      const d = deps(dir, { emit: (e) => events.push(e) });
+      const summary = await runTick(d);
+      assert.ok(summary.notify.newAtRisk.some(i => i.group.rootCause === "card_4821"));
+      assert.ok(events[0].notify.newAtRisk.length >= 1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("flips an account stale and emits even when item set is unchanged", async () => {
+    const dir = tmp();
+    try {
+      await runTick(deps(dir)); // seed ok + items
+      const events = [];
+      const d = deps(dir, { fetchFn: async () => { throw new Error("boom"); }, emit: (e) => events.push(e), store: createStore(dir) });
+      const summary = await runTick(d);
+      assert.deepEqual(summary.notify.staleFlips, ["brickell"]);
+      assert.equal(events.length, 1); // emitted despite items being retained/unchanged
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
