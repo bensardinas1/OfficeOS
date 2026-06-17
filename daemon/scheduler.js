@@ -34,7 +34,7 @@ export async function runTick(deps) {
       continue;
     }
     const classified = classifyFn(emails, account);
-    const items = await runNormalizers(classified, account, typeConfig, { reasonerFn: deps.reasonerFn });
+    const items = await runNormalizers(classified, account, typeConfig, { reasonerFn: deps.reasonerFn, nowMs: Date.parse(clock.now) });
     // stamp lastChanged: keep prior timestamp if the item is unchanged
     for (const item of items) {
       const before = prevItemsById.get(item.id);

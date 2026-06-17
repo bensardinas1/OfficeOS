@@ -9,6 +9,7 @@ import { regroupStragglers } from "./regroup.js";
 import { normalizeGateway } from "./gateway.js";
 import { normalizeAudit } from "./audit.js";
 import { normalizeExposed } from "./exposed.js";
+import { prepareEmails } from "./prepare.js";
 
 function flattenSourceEmails(classified, sourceCategories) {
   const out = [];
@@ -22,27 +23,27 @@ function flattenSourceEmails(classified, sourceCategories) {
 const ADAPTERS = {
   async owed_risk(classified, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.owed_risk;
-    const emails = flattenSourceEmails(classified, rules.sourceCategories);
+    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     const items = normalizeOwedRisk(emails, account, rules);
     if (opts?.reasonerFn) return regroupStragglers(items, account, rules, opts.reasonerFn);
     return items;
   },
-  handled(classified, account, typeConfig) {
-    return normalizeHandled(classified, account, typeConfig);
+  handled(classified, account, typeConfig, opts) {
+    return normalizeHandled(classified, account, typeConfig, { lookbackHours: typeConfig.jobTypes.handled?.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
   },
-  gateway(classified, account, typeConfig) {
+  gateway(classified, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.gateway;
-    const emails = flattenSourceEmails(classified, rules.sourceCategories);
+    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     return normalizeGateway(emails, account, rules);
   },
-  audit(classified, account, typeConfig) {
+  audit(classified, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.audit;
-    const emails = flattenSourceEmails(classified, rules.sourceCategories);
+    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     return normalizeAudit(emails, account, rules);
   },
-  exposed(classified, account, typeConfig) {
+  exposed(classified, account, typeConfig, opts) {
     const rules = typeConfig.jobTypes.exposed;
-    const emails = flattenSourceEmails(classified, rules.sourceCategories);
+    const emails = prepareEmails(flattenSourceEmails(classified, rules.sourceCategories), { lookbackHours: rules.lookbackHours, nowMs: opts?.nowMs ?? Date.now() });
     return normalizeExposed(emails, account, rules);
   },
 };

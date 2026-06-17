@@ -41,4 +41,13 @@ describe("normalizeHandled", () => {
     assert.equal(items[0].group.rootCause, "handled");
     assert.deepEqual(items[0].group.counts, { needsYou: 1, waiting: 2 });
   });
+
+  it("excludes emails older than lookbackHours from counts", () => {
+    const now = Date.parse("2026-06-17T00:00:00Z");
+    const classified = { categories: {
+      action: { emails: [ { id: "a", received: "2026-06-16T00:00:00Z" }, { id: "b", received: "2026-05-01T00:00:00Z" } ] },
+    } };
+    const items = normalizeHandled(classified, { id: "brickell" }, typeConfig, { lookbackHours: 168, nowMs: now });
+    assert.deepEqual(items[0].group.counts, { needsYou: 1, waiting: 0 });
+  });
 });
