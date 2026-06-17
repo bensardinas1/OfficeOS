@@ -18,7 +18,9 @@ before(async () => {
   ] });
   const accountsById = { brickell: { id: "brickell", links: { billing_portal: "https://pay.example/portal" } } };
   const ctxFor = (proposal) => ({ account: accountsById[proposal.params?.account || "brickell"], saveDraftFn: async () => ({ draftId: "dX" }) });
-  server = createApiServer({ store, ctxFor, getLastTickAt: () => "t" });
+  const acks = {};
+  const ackStore = { recordAck: (id, fp) => { acks[id] = { fingerprint: fp }; }, getAcks: () => acks };
+  server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" } });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -64,5 +66,15 @@ describe("POST /proposals/:id/dismiss", () => {
 describe("unknown route", () => {
   it("404s", async () => {
     assert.equal((await fetch(`${base}/nope`)).status, 404);
+  });
+});
+
+describe("POST /items/:id/acknowledge", () => {
+  it("records an ack with the supplied fingerprint", async () => {
+    const res = await fetch(`${base}/items/i1/acknowledge?fp=abc123`, { method: "POST" });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.itemId, "i1");
   });
 });
