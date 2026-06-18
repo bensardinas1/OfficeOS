@@ -33,7 +33,7 @@ function send(res, status, obj) {
 }
 
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -100,6 +100,18 @@ export function createApiServer(deps) {
       sseClients.add(res);
       req.on("close", () => sseClients.delete(res));
       return;
+    }
+    const bodyMatch = path.match(/^\/messages\/([^/]+)\/body$/);
+    if (req.method === "GET" && bodyMatch) {
+      const emailId = decodeURIComponent(bodyMatch[1]);
+      const account = url.searchParams.get("account") || "";
+      if (!accounts.some(a => a.id === account)) return send(res, 400, { error: "unknown or missing account" });
+      try {
+        const out = await fetchBodyFn(account, emailId);
+        return send(res, 200, { id: emailId, body: out.body || "" });
+      } catch (err) {
+        return send(res, 200, { ok: false, error: err.message });
+      }
     }
     const approveMatch = path.match(/^\/proposals\/([^/]+)\/approve$/);
     if (req.method === "POST" && approveMatch) return approve(decodeURIComponent(approveMatch[1]), res);

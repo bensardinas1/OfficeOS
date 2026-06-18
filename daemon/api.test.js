@@ -20,7 +20,12 @@ before(async () => {
   const ctxFor = (proposal) => ({ account: accountsById[proposal.params?.account || "brickell"], saveDraftFn: async () => ({ draftId: "dX" }) });
   const acks = {};
   const ackStore = { recordAck: (id, fp) => { acks[id] = { fingerprint: fp }; }, getAcks: () => acks };
-  server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" } });
+  const fetchBodyFn = async (account, emailId) => {
+    if (emailId === "boom") throw new Error("nope");
+    return { id: emailId, body: `body of ${emailId} for ${account}` };
+  };
+  server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" },
+    accounts: [{ id: "brickell" }], fetchBodyFn });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -76,5 +81,23 @@ describe("POST /items/:id/acknowledge", () => {
     assert.equal(res.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.itemId, "i1");
+  });
+});
+
+describe("GET /messages/:id/body", () => {
+  it("returns the body for a known account", async () => {
+    const res = await fetch(`${base}/messages/m1/body?account=brickell`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.body, "body of m1 for brickell");
+  });
+  it("400s on unknown/missing account", async () => {
+    assert.equal((await fetch(`${base}/messages/m1/body`)).status, 400);
+    assert.equal((await fetch(`${base}/messages/m1/body?account=ghost`)).status, 400);
+  });
+  it("surfaces a connector error as ok:false (not a crash)", async () => {
+    const body = await (await fetch(`${base}/messages/boom/body?account=brickell`)).json();
+    assert.equal(body.ok, false);
+    assert.match(body.error, /nope/);
   });
 });

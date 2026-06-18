@@ -82,6 +82,12 @@ function makeSaveDraftFn(account) {
   };
 }
 
+async function fetchBody(accountId, emailId) {
+  const r = await runProcess("node", [join(root, "scripts", "fetch-message.js"), accountId, emailId], { timeoutMs: 20000 });
+  if (r.status !== 0) throw new Error(r.stderr || `fetch-message failed for ${accountId}`);
+  return JSON.parse(r.stdout);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const port = args.includes("--port") ? Number(args[args.indexOf("--port") + 1]) : DEFAULT_PORT;
@@ -112,7 +118,7 @@ async function main() {
   }
 
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
-  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() } });
+  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
   });
