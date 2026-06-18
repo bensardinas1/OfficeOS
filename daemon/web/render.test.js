@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, renderAccountSection, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -84,6 +84,42 @@ describe("safeUrl", () => {
     assert.equal(safeUrl("javascript:alert(1)"), null);
     assert.equal(safeUrl("data:text/html,x"), null);
     assert.equal(safeUrl(undefined), null);
+  });
+});
+
+describe("renderDetailPanel", () => {
+  const item = {
+    id: "brickell:gateway:nmi:1260651", account: "brickell", jobType: "gateway",
+    title: "NMI #1260651 · Tokenization Error", status: "at_risk",
+    display: { accountLabel: "Brickell Pay", accountType: "business" },
+    group: { rootCause: "nmi:1260651", merchant: "Path Peptides", members: [
+      { subject: "First message", from: "support@nmi.com", fromName: "NMI Support", emailId: "a", receivedAt: "2026-06-17T00:00:00Z" },
+      { subject: "Second message", from: "support@nmi.com", fromName: "NMI Support", emailId: "b", receivedAt: "2026-06-18T00:00:00Z" },
+    ] },
+    source: [{ kind: "url", url: "https://support.nmi.com/hc/requests/1260651" }, { kind: "thread", emailId: "a" }],
+  };
+  it("renders inbox label, root cause, status, job-specific fields, messages, and a safe link-out", () => {
+    const html = renderDetailPanel(item, Date.parse("2026-06-18T12:00:00Z"));
+    assert.match(html, /Brickell Pay/);
+    assert.match(html, /nmi:1260651/);
+    assert.match(html, /at risk/);
+    assert.match(html, /Path Peptides/);
+    assert.match(html, /First message/);
+    assert.match(html, /Second message/);
+    assert.match(html, /NMI Support/);
+    assert.match(html, /href="https:\/\/support\.nmi\.com\/hc\/requests\/1260651"/);
+    assert.match(html, /data-detail-close/);
+  });
+  it("rejects a non-http link-out and escapes message subjects", () => {
+    const evil = { ...item, source: [{ kind: "url", url: "javascript:alert(1)" }],
+      group: { ...item.group, members: [{ subject: "<img src=x onerror=alert(1)>", from: "a@b.com", emailId: "a", receivedAt: "2026-06-18T00:00:00Z" }] } };
+    const html = renderDetailPanel(evil, 0);
+    assert.doesNotMatch(html, /javascript:alert/);
+    assert.doesNotMatch(html, /<img src=x/);
+    assert.match(html, /&lt;img/);
+  });
+  it("returns empty string for a null item", () => {
+    assert.equal(renderDetailPanel(null, 0), "");
   });
 });
 

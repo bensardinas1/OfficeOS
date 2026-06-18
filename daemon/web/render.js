@@ -79,6 +79,46 @@ export function renderAccountSection(group, collapsed, nowMs = Date.now()) {
   return `<section class="acct">${head}${body}</section>`;
 }
 
+export function renderDetailPanel(item, nowMs = Date.now()) {
+  if (!item) return "";
+  const d = item.display || {};
+  const g = item.group || {};
+  const statusLabel = item.status === "at_risk" ? "at risk" : (item.acknowledged ? "acknowledged" : "ok");
+  const rows = [
+    ["Inbox", d.accountLabel || item.account],
+    ["Root cause", g.rootCause || ""],
+    ["Status", statusLabel],
+  ];
+  if (g.merchant) rows.push(["Merchant", g.merchant]);
+  if (g.gwId) rows.push(["Gateway ID", g.gwId]);
+  if (g.severity) rows.push(["Severity", g.severity]);
+  const meta = rows.map(([k, v]) =>
+    `<div class="drow"><span class="dk">${esc(k)}</span><span class="dv">${esc(v)}</span></div>`).join("");
+
+  const members = (g.members || []).slice()
+    .sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
+  const msgs = members.map(m => {
+    const who = m.fromName || m.from || m.vendor || "";
+    const when = relativeTime(m.receivedAt, nowMs);
+    return `<div class="msg"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
+      + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div></div>`;
+  }).join("");
+
+  const links = (item.source || [])
+    .filter(s => s.kind === "url" && safeUrl(s.url))
+    .map(s => `<a class="route" target="_blank" rel="noopener" href="${esc(s.url)}">↗ Open in system of record</a>`)
+    .join("");
+
+  return `<div class="backdrop" data-detail-close></div>`
+    + `<aside class="detail" role="dialog" aria-label="Item detail">`
+    + `<button class="detail-close" data-detail-close aria-label="Close">✕</button>`
+    + `<div class="dtitle">${esc(item.title)}</div>`
+    + `<div class="dmeta">${meta}</div>`
+    + `<div class="dmsgs-h">Messages</div><div class="dmsgs">${msgs}</div>`
+    + `${links ? `<div class="dlinks">${links}</div>` : ""}`
+    + `</aside>`;
+}
+
 export function renderSelectControls(selectedCount) {
   return `<div class="bulk">
     <span>${esc(selectedCount)} selected</span>
