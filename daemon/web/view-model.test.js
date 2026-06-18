@@ -89,6 +89,16 @@ describe("toPanelView display + grouping", () => {
     const v = toPanelView({ ...model, accounts: { brickell: { status: "ok" }, summit: { status: "ok" } } });
     assert.equal(v.groups.find(g => g.account === "brickell").label, "brickell");
   });
+
+  it("prefers vendor over fromName for owed_risk primarySender", () => {
+    const m = {
+      generatedAt: "t", accounts: { brickell: { status: "ok" } },
+      items: [{ id: "x", jobType: "owed_risk", account: "brickell", title: "t", status: "at_risk",
+        group: { rootCause: "r", members: [{ vendor: "Acme Corp", fromName: "billing-bot", from: "b@acme.com", subject: "s", emailId: "e", receivedAt: "2026-06-14T00:00:00Z" }] } }],
+      proposals: [],
+    };
+    assert.equal(toPanelView(m).groups[0].items[0].display.primarySender, "Acme Corp");
+  });
 });
 
 describe("findItem", () => {
@@ -109,5 +119,11 @@ describe("filterGroups", () => {
     assert.equal(g[0].account, "brickell");
     assert.equal(g[0].items.length, 1);
     assert.equal(filterGroups(v, { query: "nope" }).length, 0);
+  });
+  it("filters by account axis and drops other groups", () => {
+    const v = toPanelView(model);
+    const g = filterGroups(v, { account: "summit" });
+    assert.equal(g.length, 1);
+    assert.equal(g[0].account, "summit");
   });
 });

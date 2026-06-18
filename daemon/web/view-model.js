@@ -73,30 +73,24 @@ export function toPanelView(model) {
   };
 }
 
-/** Flat list of items matching the filter — used by bulk-approve selection. */
-export function filterItems(view, opts = {}) {
-  const all = view.groups.flatMap(g => g.items);
-  const q = (opts.query || "").toLowerCase();
-  return all.filter(i =>
-    (!opts.account || i.account === opts.account) &&
-    (!opts.jobType || i.jobType === opts.jobType) &&
-    (!q || `${i.title} ${i.group?.rootCause || ""}`.toLowerCase().includes(q))
-  );
+/** Predicate shared by filterGroups/filterItems so a new axis is added in one place. */
+function matchesFilter(item, opts, q) {
+  return (!opts.account || item.account === opts.account) &&
+    (!opts.jobType || item.jobType === opts.jobType) &&
+    (!q || `${item.title} ${item.group?.rootCause || ""}`.toLowerCase().includes(q));
 }
 
-/** Groups with items filtered the same way; groups left empty are dropped. */
+/** Groups with items filtered; groups left empty are dropped. */
 export function filterGroups(view, opts = {}) {
   const q = (opts.query || "").toLowerCase();
   return view.groups
-    .map(g => ({
-      ...g,
-      items: g.items.filter(i =>
-        (!opts.account || i.account === opts.account) &&
-        (!opts.jobType || i.jobType === opts.jobType) &&
-        (!q || `${i.title} ${i.group?.rootCause || ""}`.toLowerCase().includes(q))
-      ),
-    }))
+    .map(g => ({ ...g, items: g.items.filter(i => matchesFilter(i, opts, q)) }))
     .filter(g => g.items.length > 0);
+}
+
+/** Flat list of matching items — used by bulk-approve selection. */
+export function filterItems(view, opts = {}) {
+  return filterGroups(view, opts).flatMap(g => g.items);
 }
 
 /** Locate an item (with its derived display) across all groups by id. */
