@@ -28,4 +28,9 @@ describe("extractGmailBody", () => {
     assert.equal(extractGmailBody(null), "");
     assert.equal(extractGmailBody({ mimeType: "text/plain" }), "");
   });
+  it("decodes base64url (exercises the - / _ substitution)", () => {
+    // ">>>" → standard base64 "Pj4+"; base64url replaces + with - → "Pj4-".
+    const payload = { mimeType: "text/plain", body: { data: "Pj4-" } };
+    assert.equal(extractGmailBody(payload), ">>>");
+  });
 });
