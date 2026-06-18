@@ -10,7 +10,7 @@ const rules = { recognizers: { secureframe: {
 } } };
 
 const emails = [
-  { id: "a", from: "hello@secureframe.com", subject: "Your auditor marked a test as Action required",
+  { id: "a", from: "hello@secureframe.com", fromName: "Secureframe", subject: "Your auditor marked a test as Action required",
     preview: "Your auditor manually updated the test Load balancers for cloud infrastructure traffic (Azure) to Action required.", receivedAt: "2026-06-15T00:00:00Z" },
   { id: "b", from: "hello@secureframe.com", subject: "New comment from your auditor",
     preview: "Your auditor added a new comment on the test Load balancers for cloud infrastructure traffic (Azure). Please upload screenshots.", receivedAt: "2026-06-16T00:00:00Z" },
@@ -29,6 +29,13 @@ describe("normalizeAudit", () => {
     assert.equal(it0.group.members.length, 2);
     assert.ok(it0.source.some(s => s.kind === "url" && /secureframe\.com/.test(s.url)));
     assert.equal(it0.acknowledgeable, true);
+  });
+
+  it("carries member sender + date through for tile context", () => {
+    const m = normalizeAudit(emails, account, rules)[0].group.members.find(x => x.emailId === "a");
+    assert.equal(m.from, "hello@secureframe.com");
+    assert.equal(m.fromName, "Secureframe");
+    assert.equal(m.receivedAt, "2026-06-15T00:00:00Z");
   });
 
   it("returns [] when there are no Secureframe emails", () => {

@@ -39,7 +39,7 @@ export function normalizeAudit(emails, account, rules) {
       status,
       group: {
         rootCause: testName,
-        members: members.map(m => ({ subject: m.subject, emailId: m.id, receivedAt: m.receivedAt })),
+        members: members.map(m => ({ subject: m.subject, emailId: m.id, receivedAt: m.receivedAt, from: m.from, fromName: m.fromName })),
       },
       source: [{ kind: "url", url }, ...members.map(m => ({ kind: "thread", emailId: m.id }))],
       acknowledgeable: true,

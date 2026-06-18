@@ -43,7 +43,7 @@ export function normalizeExposed(emails, account, rules) {
         rootCause: identityKey,
         severity: finding.severity,
         source: finding.source,
-        members: members.map(m => ({ subject: m.subject, emailId: m.id, receivedAt: m.receivedAt })),
+        members: members.map(m => ({ subject: m.subject, emailId: m.id, receivedAt: m.receivedAt, from: m.from, fromName: m.fromName })),
       },
       source: [{ kind: "url", url: finding.url }, ...members.map(m => ({ kind: "thread", emailId: m.id }))],
       proposedActions: [],

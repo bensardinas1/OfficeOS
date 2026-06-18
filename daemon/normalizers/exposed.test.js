@@ -15,7 +15,7 @@ const rules = {
 
 const emails = [
   { id: "a", from: "MSSecurity-noreply@microsoft.com", subject: "Microsoft Defender for Cloud found potential attack path in your environment", preview: "Risk level: Critical. Attack path ID 7a226bfd-a239-5699-a4dc-0aba63478b99", receivedAt: "2026-06-16T00:00:00Z" },
-  { id: "b", from: "defender-noreply@microsoft.com", subject: "New vulnerabilities notification from Microsoft Defender for Endpoint", preview: "Vulnerability Name CVE-2026-48778 Severity High CVSS 7.8 Notepad++", receivedAt: "2026-06-09T00:00:00Z" },
+  { id: "b", from: "defender-noreply@microsoft.com", fromName: "Microsoft Defender", subject: "New vulnerabilities notification from Microsoft Defender for Endpoint", preview: "Vulnerability Name CVE-2026-48778 Severity High CVSS 7.8 Notepad++", receivedAt: "2026-06-09T00:00:00Z" },
   { id: "c", from: "azure-noreply@microsoft.com", subject: "Microsoft Entra ID Protection Weekly Digest", preview: "New risky users detected 0 New risky sign-ins detected 0", receivedAt: "2026-06-15T00:00:00Z" },
   { id: "d", from: "ar@globex.com", subject: "unrelated", preview: "nothing", receivedAt: "2026-06-15T00:00:00Z" },
 ];
@@ -35,6 +35,14 @@ describe("normalizeExposed", () => {
     assert.equal(cve.acknowledgeable, true);
     assert.equal(cve.id, "brickell:exposed:cve:CVE-2026-48778");
     assert.ok(cve.source.some(s => s.kind === "url" && /security\.microsoft\.com/.test(s.url)));
+  });
+
+  it("carries member sender + date through for tile context", () => {
+    const cve = normalizeExposed(emails, account, rules).find(i => i.group.rootCause === "cve:CVE-2026-48778");
+    const m = cve.group.members[0];
+    assert.equal(m.from, "defender-noreply@microsoft.com");
+    assert.equal(m.fromName, "Microsoft Defender");
+    assert.equal(m.receivedAt, "2026-06-09T00:00:00Z");
   });
 
   it("dedupes the same finding seen in two emails", () => {

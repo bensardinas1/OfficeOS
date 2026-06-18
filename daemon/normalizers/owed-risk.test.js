@@ -10,8 +10,8 @@ const rules = {
 const account = { id: "brickell", links: { billing_portal: "https://pay.example/portal" } };
 
 const emails = [
-  { id: "e1", from: "billing@acme.com", fromName: "Acme", subject: "Payment failed — card ending in 4821", preview: "" },
-  { id: "e2", from: "ar@globex.com", fromName: "Globex", subject: "Your card ending in 4821 was declined", preview: "" },
+  { id: "e1", from: "billing@acme.com", fromName: "Acme", subject: "Payment failed — card ending in 4821", preview: "", receivedAt: "2026-06-14T00:00:00Z" },
+  { id: "e2", from: "ar@globex.com", fromName: "Globex", subject: "Your card ending in 4821 was declined", preview: "", receivedAt: "2026-06-15T00:00:00Z" },
   { id: "e3", from: "ar@initech.com", fromName: "Initech", subject: "Invoice past due", preview: "" },
   { id: "e4", from: "newsletter@acme.com", fromName: "Acme", subject: "Spring sale!", preview: "deals inside" },
 ];
@@ -39,6 +39,13 @@ describe("normalizeOwedRisk", () => {
     assert.deepEqual(card.proposedActions, ["draft_chase", "route:billing_portal"]);
     assert.ok(card.source.some(s => s.kind === "url" && s.url === "https://pay.example/portal"));
     assert.ok(card.source.some(s => s.kind === "thread" && s.emailId === "e1"));
+  });
+
+  it("carries member receivedAt + fromName through for tile context", () => {
+    const card = normalizeOwedRisk(emails, account, rules).find(i => i.group.rootCause === "card_4821");
+    const m = card.group.members.find(x => x.emailId === "e1");
+    assert.equal(m.receivedAt, "2026-06-14T00:00:00Z");
+    assert.equal(m.fromName, "Acme");
   });
 
   it("returns [] when no emails match", () => {

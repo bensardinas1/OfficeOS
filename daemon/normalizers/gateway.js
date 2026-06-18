@@ -42,7 +42,7 @@ export function normalizeGateway(emails, account, rules, recognizers = DEFAULT_R
         processor: name,
         merchant: rec.merchant ?? null,
         gwId: rec.gwId ?? null,
-        members: members.map(m => ({ subject: m.subject, emailId: m.id, receivedAt: m.receivedAt })),
+        members: members.map(m => ({ subject: m.subject, emailId: m.id, receivedAt: m.receivedAt, from: m.from, fromName: m.fromName })),
       },
       source: [{ kind: "url", url: rec.url }, ...members.map(m => ({ kind: "thread", emailId: m.id }))],
       proposedActions: [],

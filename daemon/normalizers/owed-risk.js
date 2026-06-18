@@ -40,7 +40,7 @@ export function normalizeOwedRisk(emails, account, rules) {
       status: n >= atRiskMin ? "at_risk" : "ok",
       group: {
         rootCause,
-        members: members.map(m => ({ vendor: m.fromName || m.from, from: m.from, subject: m.subject, emailId: m.id })),
+        members: members.map(m => ({ vendor: m.fromName || m.from, from: m.from, fromName: m.fromName, subject: m.subject, emailId: m.id, receivedAt: m.receivedAt })),
       },
       source,
       proposedActions: portal ? ["draft_chase", "route:billing_portal"] : ["draft_chase"],
