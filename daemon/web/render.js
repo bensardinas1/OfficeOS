@@ -38,12 +38,17 @@ export function renderHeader(view) {
     + ` <span class="sub">· ${esc(view.pendingCount)} pending</span>${stale}</div>`;
 }
 
+// Human labels for raw internal ids. Approve falls back to "Approve <action>"
+// for any future action; the chip falls back to the raw jobType.
+const ACTION_LABELS = { draft_chase: "Draft a follow-up email" };
+const CHIP_LABELS = { handled: "summary" };
+
 export function renderItemCard(item, nowMs = Date.now()) {
   const d = item.display || {};
   const pending = (item.proposals || []).find(p => p.state === "pending");
   const routeUrl = safeUrl((item.source || []).find(s => s.kind === "url")?.url);
   const approveBtn = pending
-    ? `<button class="approve" data-approve="${esc(pending.id)}">✓ Approve ${esc(pending.action)}</button>` : "";
+    ? `<button class="approve" data-approve="${esc(pending.id)}">✓ ${esc(ACTION_LABELS[pending.action] || `Approve ${pending.action}`)}</button>` : "";
   const dismissBtn = pending
     ? `<button class="dismiss" data-dismiss="${esc(pending.id)}">dismiss</button>` : "";
   const routeBtn = routeUrl
@@ -54,14 +59,17 @@ export function renderItemCard(item, nowMs = Date.now()) {
 
   const when = relativeTime(d.latestDate, nowMs);
   const count = d.messageCount ?? (item.group?.members || []).length;
-  const subline = [
+  const senderSub = [
     d.primarySender ? esc(d.primarySender) : "",
     count ? `${count} message${count === 1 ? "" : "s"}` : "",
   ].filter(Boolean).join(" · ");
+  // A normalizer may supply an explicit subtitle (e.g. the handled summary's
+  // secondary count); otherwise fall back to the sender · count line.
+  const subline = (item.subtitle != null && item.subtitle !== "") ? esc(item.subtitle) : senderSub;
 
   return `<div class="card ${esc(item.status)}" data-item="${esc(item.id)}">`
     + `<label class="sel"><input type="checkbox" data-select="${esc(item.id)}"> select</label>`
-    + `<div class="cardhdr"><span class="chip">${esc(item.jobType || "")}</span>`
+    + `<div class="cardhdr"><span class="chip">${esc(CHIP_LABELS[item.jobType] || item.jobType || "")}</span>`
     + `${when ? `<span class="when">${esc(when)}</span>` : ""}</div>`
     + `<div class="title">${esc(item.title)}</div>`
     + `${subline ? `<div class="meta">${subline}</div>` : ""}`

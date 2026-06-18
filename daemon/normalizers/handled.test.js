@@ -19,25 +19,34 @@ function classifiedWith(counts) {
 }
 
 describe("normalizeHandled", () => {
-  it("emits one summary item per account with needs-you and waiting counts", () => {
+  it("leads with the actionable count and demotes the rest to a subtitle", () => {
     const items = normalizeHandled(classifiedWith({ action: 2, fyi: 3, news: 1, ignore: 5 }), account, typeConfig);
     assert.equal(items.length, 1);
     const it0 = items[0];
     assert.equal(it0.id, "brickell:handled");
     assert.equal(it0.jobType, "handled");
     assert.equal(it0.status, "ok");
-    assert.match(it0.title, /2 need you/);
-    assert.match(it0.title, /4 waiting/);
+    assert.equal(it0.title, "2 need a reply or decision");
+    assert.equal(it0.subtitle, "+ 4 informational");
+    assert.doesNotMatch(it0.title, /need you|waiting/); // no collision with the header's "N need you"
   });
 
-  it("says inbox clear when nothing is actionable or waiting", () => {
+  it("says nothing needs a reply when there is no actionable mail but other mail exists", () => {
+    const items = normalizeHandled(classifiedWith({ fyi: 10 }), account, typeConfig);
+    assert.equal(items[0].title, "Nothing needs a reply");
+    assert.equal(items[0].subtitle, "+ 10 informational");
+  });
+
+  it("says inbox clear with no subtitle when nothing is actionable or waiting", () => {
     const items = normalizeHandled(classifiedWith({ ignore: 4 }), account, typeConfig);
     assert.match(items[0].title, /clear/i);
+    assert.equal(items[0].subtitle, "");
     assert.equal(items[0].group.members.length, 0);
   });
 
-  it("carries the counts in group for the UI", () => {
+  it("uses singular 'needs' for a single actionable item, and carries counts in group", () => {
     const items = normalizeHandled(classifiedWith({ action: 1, fyi: 2 }), account, typeConfig);
+    assert.equal(items[0].title, "1 needs a reply or decision");
     assert.equal(items[0].group.rootCause, "handled");
     assert.deepEqual(items[0].group.counts, { needsYou: 1, waiting: 2 });
   });

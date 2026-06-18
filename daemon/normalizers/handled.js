@@ -28,14 +28,18 @@ export function normalizeHandled(classified, account, typeConfig, opts = {}) {
     if (actionable.has(id)) needsYou += n;
     else waiting += n;
   }
+  // Lead with the one number that requires the user (a reply or decision);
+  // demote the heterogeneous "everything else" pile to a quiet subtitle.
   const title = needsYou > 0
-    ? `${needsYou} need you · ${waiting} waiting`
-    : (waiting > 0 ? `${waiting} waiting · inbox clear` : "Inbox clear");
+    ? `${needsYou} ${needsYou === 1 ? "needs" : "need"} a reply or decision`
+    : (waiting > 0 ? "Nothing needs a reply" : "Inbox clear");
+  const subtitle = waiting > 0 ? `+ ${waiting} informational` : "";
   return [{
     id: `${account.id}:handled`,
     jobType: "handled",
     account: account.id,
     title,
+    subtitle,
     status: "ok",
     group: { rootCause: "handled", members: [], counts: { needsYou, waiting } },
     source: [],

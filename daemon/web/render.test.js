@@ -75,6 +75,23 @@ describe("renderItemCard", () => {
     };
     assert.doesNotMatch(renderItemCard(gw, 0), /SECRET-SUBJECT/);
   });
+  it("labels the draft_chase approve action in plain language (not the raw id)", () => {
+    const html = renderItemCard(item);
+    assert.match(html, /✓ Draft a follow-up email/);
+    assert.doesNotMatch(html, /Approve draft_chase/);
+  });
+  it("renders a SUMMARY chip and the subtitle for a handled summary tile", () => {
+    const handled = {
+      id: "brickell:handled", account: "brickell", jobType: "handled",
+      title: "99 need a reply or decision", subtitle: "+ 73 informational", status: "ok",
+      group: { rootCause: "handled", members: [] }, display: { messageCount: 0, latestDate: null }, source: [], proposals: [],
+    };
+    const html = renderItemCard(handled, 0);
+    assert.match(html, /class="chip">summary</);   // CSS uppercases to SUMMARY
+    assert.doesNotMatch(html, /class="chip">handled</);
+    assert.match(html, /99 need a reply or decision/);
+    assert.match(html, /\+ 73 informational/);
+  });
   it("escapes HTML in display.primarySender (untrusted sender name)", () => {
     const evil = { ...item, jobType: "gateway",
       display: { primarySender: "<img src=x onerror=alert(1)>", messageCount: 1, latestDate: null },
