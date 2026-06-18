@@ -43,7 +43,7 @@ Recognizers already see `email.from`, `email.fromName`, `email.receivedAt`; the 
 - `daemon/normalizers/gateway.js` — add `from`, `fromName` to each member (already has `subject`, `emailId`, `receivedAt`).
 - `daemon/normalizers/audit.js` — add `from`, `fromName` to each member (already has `subject`, `emailId`, `receivedAt`).
 - `daemon/normalizers/exposed.js` — add `from`, `fromName` to each member (already has `subject`, `emailId`, `receivedAt`).
-- `daemon/normalizers/owed-risk.js` — add `receivedAt` to each member (already has `vendor`, `from`, `subject`, `emailId`).
+- `daemon/normalizers/owed-risk.js` — add `receivedAt` and `fromName` to each member (already has `vendor`, `from`, `subject`, `emailId`). `fromName` keeps the member shape uniform across all jobs so the detail panel renders friendly sender names (not just for the `vendor`-derived tile sender).
 
 **Member shape after this change:** `{ subject, emailId, receivedAt, from, fromName }` (owed_risk additionally keeps `vendor`).
 
@@ -71,14 +71,15 @@ accountsState[account.id] = {
 `view-model.js` already builds `groups` (one per account) but currently flattens them for the workbench. Changes:
 
 - `toPanelView(model)`:
-  - Attach `item.display = { primarySender, latestDate, messageCount }` to every item, derived purely from `group.members`:
+  - Attach `item.display = { primarySender, latestDate, messageCount, accountLabel, accountType }` to every item, derived purely from `group.members` and `model.accounts[item.account]`:
     - `messageCount` = `members.length`
     - `latestDate` = max `receivedAt` across members (ISO string or null)
     - `primarySender` = most frequent `fromName || from` among members; tie-break = first; for `owed_risk` use `vendor || fromName || from`; null if none.
-  - Surface `label` and `accountType` on each group from `model.accounts[account]`.
+    - `accountLabel` / `accountType` = from `model.accounts[item.account]` (label falls back to the account id). **Carrying these on `item.display` is what lets `renderDetailPanel(item, nowMs)` show the inbox label without being handed the group** — `render.js` is pure and the item is the only thing it receives.
+  - Surface `label` and `accountType` on each group from `model.accounts[account]` (for the section header).
   - Add `atRiskCount` per group (count of `status === "at_risk"` items) for the section header and for ordering.
   - Order `groups` by `atRiskCount` descending (tie-break: account id, stable).
-- New helper `findItem(view, id)` → the item object (with `display`) or null, for the detail panel.
+- New helper `findItem(view, id)` → the item object (with `display`, which carries `accountLabel`/`accountType`) or null, for the detail panel. No need to also return the group — the label travels on `item.display`.
 - `filterItems` (or a new `filterGroups`) applies the query *within* groups and drops groups left empty after filtering.
 
 All of `view-model.js` stays node-API-free (imported by tests and browser alike).
@@ -94,9 +95,9 @@ All of `view-model.js` stays node-API-free (imported by tests and browser alike)
   - Subline: `primarySender · N message(s)`.
   - Actions row: existing Approve / Open / Acknowledge / dismiss **plus** a `Details` button (`data-detail="<item.id>"`).
   - **No account badge** (the section header owns the inbox identity).
-- `renderAccountSection(group, nowMs)` — new. Collapsible header (`data-collapse="<account>"`) showing `label` · `accountType` · `N need you` (the `atRiskCount`), then the group's item cards. `handled` summary tiles render here alongside the rest.
+- `renderAccountSection(group, collapsed, nowMs)` — new. Takes an explicit `collapsed` boolean (render.js is pure and cannot read `app.js` UI state). Collapsible header (`data-collapse="<account>"`) showing `label` · `accountType` · `N need you` (the `atRiskCount`) with a chevron reflecting `collapsed`; when `collapsed` the body (item cards) is omitted. `handled` summary tiles render here alongside the rest. `app.js` passes `ui.collapsed.has(group.account)`.
 - `renderDetailPanel(item, nowMs)` — new. The slide-in content:
-  - Metadata grid: inbox (label), root cause, status, and job-specific fields when present (`merchant`/`gwId` for gateway, `severity` for exposed).
+  - Metadata grid: inbox (`item.display.accountLabel`), root cause, status, and job-specific fields when present (`merchant`/`gwId` for gateway, `severity` for exposed).
   - Per-message list from `group.members`: `subject` · `fromName || from` · formatted `receivedAt`.
   - Link-out(s) from `item.source` where `kind === "url"` (guarded by `safeUrl`).
   - A close button (`data-detail-close`).
