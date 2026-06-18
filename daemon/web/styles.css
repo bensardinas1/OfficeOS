@@ -23,3 +23,25 @@ button, .route { font:inherit; border-radius:8px; padding:6px 12px; border:1px s
 .bulk-approve[disabled] { opacity:.4; cursor:default; }
 .sel { float:right; color:#8a94a6; font-size:12px; }
 .ack { background:#23314a; color:#cdd9ea; }
+.cardhdr { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.chip { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#8a94a6; border:1px solid var(--line); border-radius:6px; padding:1px 6px; }
+.when { color:#8a94a6; font-size:12px; }
+.acct { margin:10px 0; }
+.sechdr { display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px 4px; border-bottom:1px solid var(--line); user-select:none; }
+.sechdr .chev { color:#8a94a6; width:1em; }
+.sechdr .seclabel { font-weight:600; }
+.sechdr .sectype { color:#8a94a6; font-size:12px; }
+.sechdr .secneed { margin-left:auto; color:var(--risk); font-size:12px; }
+.acct .list { margin-top:10px; }
+button.detail { background:transparent; color:#8a94a6; }
+.backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:10; }
+aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(440px,90vw); background:var(--card); border-left:1px solid var(--line); box-shadow:-8px 0 24px rgba(0,0,0,.35); z-index:11; padding:18px; overflow-y:auto; }
+.detail-close { position:absolute; top:12px; right:12px; background:transparent; color:#8a94a6; border:none; font-size:16px; cursor:pointer; }
+.detail .dtitle { font-weight:700; font-size:16px; margin:0 24px 12px 0; }
+.detail .drow { display:flex; gap:10px; padding:3px 0; font-size:13px; }
+.detail .dk { color:#8a94a6; min-width:96px; }
+.detail .dmsgs-h { margin:14px 0 6px; color:#8a94a6; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+.detail .msg { padding:8px 0; border-top:1px solid var(--line); }
+.detail .msgsub { font-size:13px; }
+.detail .msgmeta { color:#8a94a6; font-size:12px; margin-top:2px; }
+.detail .dlinks { margin-top:16px; }
