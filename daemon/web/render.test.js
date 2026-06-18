@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -84,6 +84,28 @@ describe("safeUrl", () => {
     assert.equal(safeUrl("javascript:alert(1)"), null);
     assert.equal(safeUrl("data:text/html,x"), null);
     assert.equal(safeUrl(undefined), null);
+  });
+});
+
+describe("renderAccountSection", () => {
+  const group = {
+    account: "brickell", label: "Brickell Pay", accountType: "business", atRiskCount: 2,
+    items: [
+      { id: "i1", account: "brickell", jobType: "gateway", title: "Item one", status: "at_risk", group: { rootCause: "r1", members: [] }, display: { primarySender: "NMI", messageCount: 1, latestDate: null }, source: [], proposals: [] },
+    ],
+  };
+  it("renders a collapse header with label, type, and need-you count, plus the cards when expanded", () => {
+    const html = renderAccountSection(group, false, 0);
+    assert.match(html, /data-collapse="brickell"/);
+    assert.match(html, /Brickell Pay/);
+    assert.match(html, /business/);
+    assert.match(html, /2 need you/);
+    assert.match(html, /Item one/);
+  });
+  it("omits the card body when collapsed", () => {
+    const html = renderAccountSection(group, true, 0);
+    assert.match(html, /data-collapse="brickell"/);
+    assert.doesNotMatch(html, /Item one/);
   });
 });
 

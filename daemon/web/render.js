@@ -68,6 +68,17 @@ export function renderItemCard(item, nowMs = Date.now()) {
     + `<div class="actions">${approveBtn}${routeBtn}${ackBtn}${detailBtn}${dismissBtn}</div></div>`;
 }
 
+export function renderAccountSection(group, collapsed, nowMs = Date.now()) {
+  const need = group.atRiskCount || 0;
+  const head = `<div class="sechdr" data-collapse="${esc(group.account)}">`
+    + `<span class="chev">${collapsed ? "▸" : "▾"}</span>`
+    + `<span class="seclabel">${esc(group.label || group.account)}</span>`
+    + `<span class="sectype">${esc(group.accountType || "")}</span>`
+    + `<span class="secneed">${esc(need)} need you</span></div>`;
+  const body = collapsed ? "" : `<div class="list">${group.items.map(i => renderItemCard(i, nowMs)).join("")}</div>`;
+  return `<section class="acct">${head}${body}</section>`;
+}
+
 export function renderSelectControls(selectedCount) {
   return `<div class="bulk">
     <span>${esc(selectedCount)} selected</span>
