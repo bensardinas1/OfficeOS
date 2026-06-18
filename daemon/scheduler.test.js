@@ -67,6 +67,7 @@ describe("runTick", () => {
       const model = d.store.getModel();
       assert.equal(model.accounts.brickell.status, "stale");
       assert.equal(model.accounts.brickell.accountType, "business");
+      assert.equal(model.accounts.brickell.label, "brickell");
       assert.ok(model.items.length > 0, "last-good items retained");
       assert.ok(summary.warnings.some(w => /boom/.test(w)));
     } finally { rmSync(dir, { recursive: true, force: true }); }
