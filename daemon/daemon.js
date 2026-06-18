@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createStore } from "./store.js";
 import { createAckStore } from "./acknowledge.js";
 import { createApiServer } from "./api.js";
@@ -28,37 +28,57 @@ function loadConfig() {
   return { companies, accountTypes };
 }
 
-function fetchSubprocess(accountId, folder, hours) {
+/**
+ * Async subprocess runner — replaces spawnSync so a tick never blocks the HTTP
+ * event loop (keeps the panel responsive during fetches/drafts/reasoner calls).
+ * Resolves { status, stdout, stderr }; never blocks; enforces optional timeout
+ * and maxBuffer (kills + rejects on overflow).
+ */
+function runProcess(cmd, args, { input = null, timeoutMs = 0, maxBuffer = 50 * 1024 * 1024 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { windowsHide: true });
+    const out = [], err = [];
+    let outLen = 0, settled = false, timer = null;
+    const fail = (e) => { if (settled) return; settled = true; if (timer) clearTimeout(timer); try { child.kill(); } catch {} reject(e); };
+    if (timeoutMs > 0) timer = setTimeout(() => fail(new Error(`${cmd} timed out after ${timeoutMs}ms`)), timeoutMs);
+    child.stdout.on("data", (d) => { outLen += d.length; if (outLen > maxBuffer) fail(new Error(`${cmd} exceeded maxBuffer`)); else out.push(d); });
+    child.stderr.on("data", (d) => err.push(d));
+    child.on("error", fail);
+    child.on("close", (code) => {
+      if (settled) return; settled = true; if (timer) clearTimeout(timer);
+      resolve({ status: code, stdout: Buffer.concat(out).toString("utf-8"), stderr: Buffer.concat(err).toString("utf-8") });
+    });
+    if (input != null) { child.stdin.write(input); child.stdin.end(); }
+  });
+}
+
+async function fetchSubprocess(accountId, folder, hours) {
   const { companies } = loadConfig();
   const account = companies.companies.find(c => c.id === accountId);
   const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
   const base = [join(root, "scripts", script), accountId, String(hours), folder];
   const args = account.provider === "gmail" ? base : [...base, "500", "4000"];
-  const child = spawnSync("node", args, {
-    encoding: "utf-8", maxBuffer: 50 * 1024 * 1024,
-  });
-  if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}/${folder}`);
-  return JSON.parse(child.stdout);
+  const r = await runProcess("node", args);
+  if (r.status !== 0) throw new Error(r.stderr || `fetch failed for ${accountId}/${folder}`);
+  return JSON.parse(r.stdout);
 }
 
-function runClaude(prompt) {
+async function runClaude(prompt) {
   // timeout bounds the blast radius if `claude` hangs (e.g. waiting on auth);
-  // a timed-out spawn sets child.error, which the caller turns into a throw →
-  // makeReasonerFn catches it → regroup keeps deterministic grouping.
-  const child = spawnSync("claude", ["-p", prompt], { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024, timeout: 30000 });
-  if (child.error || child.status !== 0) throw new Error(child.stderr || "claude invocation failed");
-  return child.stdout;
+  // the timeout kills + rejects → makeReasonerFn catches it → regroup keeps
+  // deterministic grouping.
+  const r = await runProcess("claude", ["-p", prompt], { timeoutMs: 30000, maxBuffer: 10 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(r.stderr || "claude invocation failed");
+  return r.stdout;
 }
 
 function makeSaveDraftFn(account) {
   // Gmail vs Outlook draft scripts mirror the morning-brief delete dispatch.
   const script = account.provider === "gmail" ? "save-gmail-draft.js" : "save-draft.js";
   return async (accountId, draft) => {
-    const child = spawnSync("node", [join(root, "scripts", script), accountId], {
-      input: JSON.stringify(draft), encoding: "utf-8",
-    });
-    if (child.status !== 0) throw new Error(child.stderr || `save-draft failed for ${accountId}`);
-    return JSON.parse(child.stdout);
+    const r = await runProcess("node", [join(root, "scripts", script), accountId], { input: JSON.stringify(draft) });
+    if (r.status !== 0) throw new Error(r.stderr || `save-draft failed for ${accountId}`);
+    return JSON.parse(r.stdout);
   };
 }
 

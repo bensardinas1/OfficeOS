@@ -7,6 +7,9 @@
     "fetch-emails": "node scripts/fetch-emails.js",
     "mcp-server": "node scripts/mcp-server.js",
     "test-auth": "node scripts/test-auth.js",
+    "daemon": "node daemon/daemon.js",
+    "daemon:once": "node daemon/daemon.js --once",
+    "seed-demo": "node daemon/seed-demo.js",
     "test": "node --test \"scripts/test/**/*.test.js\" \"daemon/**/*.test.js\""
   },
   "dependencies": {
