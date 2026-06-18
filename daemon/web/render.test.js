@@ -51,17 +51,29 @@ describe("renderItemCard", () => {
   it("omits Acknowledge for non-acknowledgeable items", () => {
     assert.doesNotMatch(renderItemCard(item), /data-ack=/);
   });
-  it("falls back to member subject when there is no vendor (gateway items), no empty commas", () => {
+  it("shows the jobType chip, primary sender, message count, and a Details button", () => {
     const gw = {
-      id: "brickell:gateway:nmi:1260651", account: "brickell",
+      id: "brickell:gateway:nmi:1260651", account: "brickell", jobType: "gateway",
       title: "NMI #1260651 · Tokenization Error", status: "at_risk",
-      group: { rootCause: "nmi:1260651", members: [{ subject: "Re: [NMI Ticket 1260651] Tokenization Error", emailId: "c" }] },
-      source: [{ kind: "url", url: "https://support.nmi.com/hc/requests/1260651" }],
-      proposals: [],
+      group: { rootCause: "nmi:1260651", members: [{ subject: "Re: [NMI Ticket 1260651]", emailId: "c", from: "support@nmi.com", fromName: "NMI Support", receivedAt: "2026-06-18T10:00:00Z" }] },
+      display: { primarySender: "NMI Support", messageCount: 1, latestDate: "2026-06-18T10:00:00Z", accountLabel: "Brickell Pay", accountType: "business" },
+      source: [{ kind: "url", url: "https://support.nmi.com/hc/requests/1260651" }], proposals: [],
     };
-    const html = renderItemCard(gw);
-    assert.match(html, /Tokenization Error/);
-    assert.doesNotMatch(html, /· <\/div>/);   // meta is not left dangling with an empty member list
+    const html = renderItemCard(gw, Date.parse("2026-06-18T12:00:00Z"));
+    assert.match(html, /class="chip">gateway</);
+    assert.match(html, /NMI Support/);
+    assert.match(html, /1 message/);
+    assert.match(html, /2h ago/);
+    assert.match(html, /data-detail="brickell:gateway:nmi:1260651"/);
+  });
+  it("does not render member subjects on the card (they belong in the detail panel)", () => {
+    const gw = {
+      id: "x", account: "brickell", jobType: "gateway", title: "T", status: "ok",
+      group: { rootCause: "r", members: [{ subject: "SECRET-SUBJECT", emailId: "c", from: "a@b.com", fromName: "Bee" }] },
+      display: { primarySender: "Bee", messageCount: 1, latestDate: null, accountLabel: "Brickell Pay" },
+      source: [], proposals: [],
+    };
+    assert.doesNotMatch(renderItemCard(gw, 0), /SECRET-SUBJECT/);
   });
 });
 
