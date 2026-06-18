@@ -10,12 +10,12 @@ const render = readFileSync(join(here, "render.js"), "utf-8");
 
 describe("panel render↔handler contract", () => {
   it("app.js handles every interactive data-attr the cards emit", () => {
-    for (const attr of ["data-approve", "data-dismiss", "data-ack", "data-select", "data-bulk-approve"]) {
+    for (const attr of ["data-approve", "data-dismiss", "data-ack", "data-select", "data-bulk-approve", "data-detail", "data-detail-close", "data-collapse"]) {
       assert.match(app, new RegExp(`\\[${attr}\\]`), `app.js must select [${attr}]`);
     }
   });
   it("render.js emits the action data-attrs app.js posts on", () => {
-    for (const attr of ["data-approve", "data-dismiss", "data-ack", "data-route"]) {
+    for (const attr of ["data-approve", "data-dismiss", "data-ack", "data-route", "data-detail", "data-collapse", "data-detail-close"]) {
       assert.match(render, new RegExp(attr), `render.js must emit ${attr}`);
     }
   });
