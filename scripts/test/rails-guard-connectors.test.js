@@ -34,3 +34,12 @@ describe("connector rails guard — deletes are soft-delete only", () => {
     assert.deepEqual(hits, [], `permanent-delete reference(s): ${hits.join(", ")}`);
   });
 });
+
+describe("connector rails guard — fetch-message is read-only", () => {
+  it("fetch-message.js never sends or permanent-deletes", () => {
+    const src = read("fetch-message.js");
+    const hits = [...SEND, ...PERM_DELETE].filter(rx => rx.test(src)).map(String);
+    assert.deepEqual(hits, [], `read-only connector must not send/delete: ${hits.join(", ")}`);
+    assert.doesNotMatch(src, /\/move\b/, "must not move/delete messages");
+  });
+});
