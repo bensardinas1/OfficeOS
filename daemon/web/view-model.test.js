@@ -44,6 +44,10 @@ describe("toPanelView", () => {
     assert.equal(brickell.items.length, 2);
     assert.deepEqual(v.staleAccounts, []);
   });
+  it("lists an account in staleAccounts when its status is stale", () => {
+    const v = toPanelView({ ...model, accounts: { ...model.accounts, summit: { status: "stale" } } });
+    assert.deepEqual(v.staleAccounts, ["summit"]);
+  });
   it("tolerates an empty model", () => {
     const v = toPanelView({ generatedAt: null, accounts: {}, items: [], proposals: [] });
     assert.equal(v.needsYouCount, 0);
