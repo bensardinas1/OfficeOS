@@ -1,17 +1,28 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { toPanelView, filterItems } from "./view-model.js";
+import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
 
 const model = {
   generatedAt: "2026-06-17T12:00:00Z",
-  accounts: { brickell: { status: "ok", lastTickAt: "t" }, summit: { status: "stale", lastTickAt: "t" } },
+  accounts: {
+    brickell: { status: "ok", lastTickAt: "t", label: "Brickell Pay", accountType: "business" },
+    summit: { status: "ok", lastTickAt: "t", label: "Summit Miami", accountType: "business" },
+  },
   items: [
-    { id: "brickell:owed_risk:card_4821", jobType: "owed_risk", account: "brickell", title: "2 failed payments — one root cause", status: "at_risk", group: { rootCause: "card_4821", members: [{}, {}] }, source: [], proposedActions: ["draft_chase", "route:billing_portal"], lastChanged: "t" },
-    { id: "brickell:owed_risk:vendor:initech.com", jobType: "owed_risk", account: "brickell", title: "1 failed payment", status: "at_risk", group: { rootCause: "vendor:initech.com", members: [{}] }, source: [], proposedActions: ["draft_chase"], lastChanged: "t" },
+    { id: "brickell:owed_risk:card_4821", jobType: "owed_risk", account: "brickell", title: "2 failed payments — one root cause", status: "at_risk",
+      group: { rootCause: "card_4821", members: [
+        { vendor: "Acme", from: "billing@acme.com", fromName: "Acme", subject: "s1", emailId: "e1", receivedAt: "2026-06-14T00:00:00Z" },
+        { vendor: "Acme", from: "billing@acme.com", fromName: "Acme", subject: "s2", emailId: "e2", receivedAt: "2026-06-16T00:00:00Z" },
+      ] }, source: [], proposedActions: ["draft_chase", "route:billing_portal"], lastChanged: "t" },
+    { id: "brickell:owed_risk:vendor:initech.com", jobType: "owed_risk", account: "brickell", title: "1 failed payment", status: "at_risk",
+      group: { rootCause: "vendor:initech.com", members: [{ vendor: "Initech", from: "ar@initech.com", fromName: "Initech", subject: "s3", emailId: "e3", receivedAt: "2026-06-10T00:00:00Z" }] },
+      source: [], proposedActions: ["draft_chase"], lastChanged: "t" },
+    { id: "summit:handled", jobType: "handled", account: "summit", title: "Summit — all handled", status: "ok",
+      group: { rootCause: "summary", members: [{ subject: "x", emailId: "z", receivedAt: "2026-06-12T00:00:00Z", from: "a@b.com", fromName: "Bee" }] }, source: [], proposedActions: [], lastChanged: "t" },
   ],
   proposals: [
-    { id: "brickell:owed_risk:card_4821::draft_chase", itemId: "brickell:owed_risk:card_4821", action: "draft_chase", state: "pending", preview: { summary: "2 failed payments — one root cause", drafts: [{}, {}] } },
-    { id: "brickell:owed_risk:vendor:initech.com::draft_chase", itemId: "brickell:owed_risk:vendor:initech.com", action: "draft_chase", state: "executed", preview: { summary: "1 failed payment", drafts: [{}] } },
+    { id: "brickell:owed_risk:card_4821::draft_chase", itemId: "brickell:owed_risk:card_4821", action: "draft_chase", state: "pending", preview: { summary: "x", drafts: [{}, {}] } },
+    { id: "brickell:owed_risk:vendor:initech.com::draft_chase", itemId: "brickell:owed_risk:vendor:initech.com", action: "draft_chase", state: "executed", preview: { summary: "y", drafts: [{}] } },
   ],
 };
 
@@ -31,7 +42,7 @@ describe("toPanelView", () => {
     const v = toPanelView(model);
     const brickell = v.groups.find(g => g.account === "brickell");
     assert.equal(brickell.items.length, 2);
-    assert.deepEqual(v.staleAccounts, ["summit"]);
+    assert.deepEqual(v.staleAccounts, []);
   });
   it("tolerates an empty model", () => {
     const v = toPanelView({ generatedAt: null, accounts: {}, items: [], proposals: [] });
@@ -46,5 +57,53 @@ describe("filterItems", () => {
     assert.equal(filterItems(v, { account: "brickell" }).length, 2);
     assert.equal(filterItems(v, { query: "initech" }).length, 1);
     assert.equal(filterItems(v, { query: "nope" }).length, 0);
+  });
+});
+
+describe("toPanelView display + grouping", () => {
+  it("derives display: sender, latest date, count per item", () => {
+    const v = toPanelView(model);
+    const card = v.groups.flatMap(g => g.items).find(i => i.id === "brickell:owed_risk:card_4821");
+    assert.equal(card.display.messageCount, 2);
+    assert.equal(card.display.latestDate, "2026-06-16T00:00:00Z");
+    assert.equal(card.display.primarySender, "Acme");
+    assert.equal(card.display.accountLabel, "Brickell Pay");
+    assert.equal(card.display.accountType, "business");
+  });
+
+  it("surfaces label/type/atRiskCount per group and orders most-at-risk first", () => {
+    const v = toPanelView(model);
+    assert.equal(v.groups[0].account, "brickell");
+    assert.equal(v.groups[0].label, "Brickell Pay");
+    assert.equal(v.groups[0].accountType, "business");
+    assert.equal(v.groups[0].atRiskCount, 2);
+    assert.equal(v.groups[1].account, "summit");
+    assert.equal(v.groups[1].atRiskCount, 0);
+  });
+
+  it("falls back to account id when no label is present", () => {
+    const v = toPanelView({ ...model, accounts: { brickell: { status: "ok" }, summit: { status: "ok" } } });
+    assert.equal(v.groups.find(g => g.account === "brickell").label, "brickell");
+  });
+});
+
+describe("findItem", () => {
+  it("finds an item across groups by id, with display attached", () => {
+    const v = toPanelView(model);
+    const hit = findItem(v, "brickell:owed_risk:card_4821");
+    assert.ok(hit);
+    assert.equal(hit.display.accountLabel, "Brickell Pay");
+    assert.equal(findItem(v, "nope"), null);
+  });
+});
+
+describe("filterGroups", () => {
+  it("filters items within each group and drops emptied groups", () => {
+    const v = toPanelView(model);
+    const g = filterGroups(v, { query: "initech" });
+    assert.equal(g.length, 1);
+    assert.equal(g[0].account, "brickell");
+    assert.equal(g[0].items.length, 1);
+    assert.equal(filterGroups(v, { query: "nope" }).length, 0);
   });
 });
