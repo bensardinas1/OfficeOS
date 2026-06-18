@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -72,5 +72,20 @@ describe("safeUrl", () => {
     assert.equal(safeUrl("javascript:alert(1)"), null);
     assert.equal(safeUrl("data:text/html,x"), null);
     assert.equal(safeUrl(undefined), null);
+  });
+});
+
+describe("relativeTime", () => {
+  const now = Date.parse("2026-06-18T12:00:00Z");
+  it("buckets seconds/minutes/hours/days and falls back to a short date", () => {
+    assert.equal(relativeTime("2026-06-18T11:59:30Z", now), "just now");
+    assert.equal(relativeTime("2026-06-18T11:30:00Z", now), "30m ago");
+    assert.equal(relativeTime("2026-06-18T09:00:00Z", now), "3h ago");
+    assert.equal(relativeTime("2026-06-16T12:00:00Z", now), "2d ago");
+    assert.equal(relativeTime("2026-06-01T12:00:00Z", now), "Jun 1");
+  });
+  it("returns empty string for missing/invalid input", () => {
+    assert.equal(relativeTime(null, now), "");
+    assert.equal(relativeTime("not-a-date", now), "");
   });
 });
