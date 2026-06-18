@@ -14,8 +14,8 @@ const rules = {
 };
 
 const emails = [
-  { id: "a", subject: "Re: [NMI Ticket 1258855] Settlement Batch Failure", preview: "How do we proceed?", receivedAt: "2026-06-10T00:00:00Z" },
-  { id: "b", subject: "Re: [NMI Ticket 1258855] Settlement Batch Failure", preview: "I'll be proceeding with closing this ticket.", receivedAt: "2026-06-13T00:00:00Z" },
+  { id: "a", from: "support@nmi.com", fromName: "NMI Support", subject: "Re: [NMI Ticket 1258855] Settlement Batch Failure", preview: "How do we proceed?", receivedAt: "2026-06-10T00:00:00Z" },
+  { id: "b", from: "support@nmi.com", fromName: "NMI Support", subject: "Re: [NMI Ticket 1258855] Settlement Batch Failure", preview: "I'll be proceeding with closing this ticket.", receivedAt: "2026-06-13T00:00:00Z" },
   { id: "c", from: "support@nmi.com", fromName: "NMI Support", subject: "Re: [NMI Ticket 1260651] Tokenization Error - GW ID 1218748", preview: "Our customer, Path Peptides (GW ID 1218748) is seeing tokenization errors", receivedAt: "2026-06-11T00:00:00Z" },
   { id: "d", subject: "Team lunch", preview: "tomorrow?", receivedAt: "2026-06-12T00:00:00Z" },
 ];
@@ -27,6 +27,7 @@ describe("normalizeGateway", () => {
     assert.deepEqual(ids, ["nmi:1258855", "nmi:1260651"]);
     const t1 = items.find(i => i.group.rootCause === "nmi:1258855");
     assert.equal(t1.group.members.length, 2);
+    assert.equal(t1.group.members[0].from, "support@nmi.com"); // sender carried even for the resolved group
   });
 
   it("marks a resolved ticket ok and an open ticket at_risk, with title + url", () => {
