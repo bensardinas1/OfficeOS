@@ -75,6 +75,14 @@ describe("renderItemCard", () => {
     };
     assert.doesNotMatch(renderItemCard(gw, 0), /SECRET-SUBJECT/);
   });
+  it("escapes HTML in display.primarySender (untrusted sender name)", () => {
+    const evil = { ...item, jobType: "gateway",
+      display: { primarySender: "<img src=x onerror=alert(1)>", messageCount: 1, latestDate: null },
+      proposals: [], source: [] };
+    const html = renderItemCard(evil, 0);
+    assert.doesNotMatch(html, /<img src=x/);
+    assert.match(html, /&lt;img/);
+  });
 });
 
 describe("safeUrl", () => {
@@ -110,13 +118,20 @@ describe("renderDetailPanel", () => {
     assert.match(html, /href="https:\/\/support\.nmi\.com\/hc\/requests\/1260651"/);
     assert.match(html, /data-detail-close/);
   });
-  it("rejects a non-http link-out and escapes message subjects", () => {
+  it("orders messages newest-first", () => {
+    const html = renderDetailPanel(item, Date.parse("2026-06-18T12:00:00Z"));
+    assert.ok(html.indexOf("Second message") < html.indexOf("First message"),
+      "the 06-18 message should render before the 06-17 message");
+  });
+  it("rejects a non-http link-out and escapes message subjects + sender names", () => {
     const evil = { ...item, source: [{ kind: "url", url: "javascript:alert(1)" }],
-      group: { ...item.group, members: [{ subject: "<img src=x onerror=alert(1)>", from: "a@b.com", emailId: "a", receivedAt: "2026-06-18T00:00:00Z" }] } };
+      group: { ...item.group, members: [{ subject: "<img src=x onerror=alert(1)>", fromName: "<script>alert(2)</script>", from: "a@b.com", emailId: "a", receivedAt: "2026-06-18T00:00:00Z" }] } };
     const html = renderDetailPanel(evil, 0);
     assert.doesNotMatch(html, /javascript:alert/);
     assert.doesNotMatch(html, /<img src=x/);
+    assert.doesNotMatch(html, /<script>alert/);
     assert.match(html, /&lt;img/);
+    assert.match(html, /&lt;script/);
   });
   it("returns empty string for a null item", () => {
     assert.equal(renderDetailPanel(null, 0), "");
@@ -153,6 +168,9 @@ describe("relativeTime", () => {
     assert.equal(relativeTime("2026-06-18T09:00:00Z", now), "3h ago");
     assert.equal(relativeTime("2026-06-16T12:00:00Z", now), "2d ago");
     assert.equal(relativeTime("2026-06-01T12:00:00Z", now), "Jun 1");
+  });
+  it("treats the 7-day boundary as exclusive (falls to short date)", () => {
+    assert.equal(relativeTime("2026-06-11T12:00:00Z", now), "Jun 11");
   });
   it("returns empty string for missing/invalid input", () => {
     assert.equal(relativeTime(null, now), "");
