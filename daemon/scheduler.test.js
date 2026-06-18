@@ -51,6 +51,8 @@ describe("runTick", () => {
       assert.ok(item);
       assert.equal(item.group.members.length, 2);
       assert.equal(model.accounts.brickell.status, "ok");
+      assert.equal(model.accounts.brickell.label, "brickell");
+      assert.equal(model.accounts.brickell.accountType, "business");
       const queue = d.store.getQueue();
       assert.ok(queue.proposals.some(p => p.id === "brickell:owed_risk:card_4821::draft_chase" && p.state === "pending"));
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -64,6 +66,7 @@ describe("runTick", () => {
       const summary = await runTick(d);
       const model = d.store.getModel();
       assert.equal(model.accounts.brickell.status, "stale");
+      assert.equal(model.accounts.brickell.accountType, "business");
       assert.ok(model.items.length > 0, "last-good items retained");
       assert.ok(summary.warnings.some(w => /boom/.test(w)));
     } finally { rmSync(dir, { recursive: true, force: true }); }

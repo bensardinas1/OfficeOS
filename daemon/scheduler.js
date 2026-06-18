@@ -20,6 +20,7 @@ export async function runTick(deps) {
 
   for (const account of accounts) {
     const typeConfig = typeConfigs[account.accountType];
+    const acctMeta = { label: account.label || account.name || account.id, accountType: account.accountType };
     if (!typeConfig?.jobTypes) continue;
 
     // folder -> max lookbackHours across jobs using it
@@ -45,7 +46,7 @@ export async function runTick(deps) {
     if (inboxFailed) {
       const wasStale = prev.accounts?.[account.id]?.status === "stale";
       if (!wasStale) staleFlips.push(account.id);
-      accountsState[account.id] = { status: "stale", lastTickAt: clock.now };
+      accountsState[account.id] = { status: "stale", lastTickAt: clock.now, ...acctMeta };
       // retain last-good items for this account
       nextItems.push(...prev.items.filter(i => i.account === account.id));
       continue;
@@ -59,7 +60,7 @@ export async function runTick(deps) {
       item.lastChanged = sameShape ? before.lastChanged : clock.now;
     }
     nextItems.push(...items);
-    accountsState[account.id] = { status: "ok", lastTickAt: clock.now };
+    accountsState[account.id] = { status: "ok", lastTickAt: clock.now, ...acctMeta };
   }
 
   for (const item of nextItems) item.fingerprint = fingerprint(item);
