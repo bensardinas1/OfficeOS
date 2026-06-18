@@ -153,6 +153,12 @@ describe("renderDetailPanel", () => {
   it("returns empty string for a null item", () => {
     assert.equal(renderDetailPanel(null, 0), "");
   });
+  it("renders a lazy body placeholder per message keyed by emailId", () => {
+    const html = renderDetailPanel(item, Date.parse("2026-06-18T12:00:00Z"));
+    assert.match(html, /data-body-for="a"/);
+    assert.match(html, /data-body-for="b"/);
+    assert.match(html, /bodyload/);
+  });
 });
 
 describe("renderAccountSection", () => {

@@ -108,8 +108,12 @@ export function renderDetailPanel(item, nowMs = Date.now()) {
   const msgs = members.map(m => {
     const who = m.fromName || m.from || m.vendor || "";
     const when = relativeTime(m.receivedAt, nowMs);
+    const bodySlot = m.emailId
+      ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
+      : "";
     return `<div class="msg"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
-      + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div></div>`;
+      + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div>`
+      + `${bodySlot}</div>`;
   }).join("");
 
   const links = (item.source || [])

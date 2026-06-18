@@ -22,4 +22,9 @@ describe("panel render↔handler contract", () => {
   it("the acknowledge POST path in app.js matches the API route shape", () => {
     assert.match(app, /\/items\/\$\{encodeURIComponent\([^)]*\)\}\/acknowledge/);
   });
+  it("app.js lazy-loads message bodies the detail panel asks for", () => {
+    assert.match(render, /data-body-for=/, "render must emit data-body-for placeholders");
+    assert.match(app, /\/messages\//, "app must fetch /messages/:id/body");
+    assert.match(app, /data-body-for/, "app must fill the body placeholders");
+  });
 });

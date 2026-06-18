@@ -46,3 +46,5 @@ aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(440px,90v
 .detail .msgsub { font-size:13px; }
 .detail .msgmeta { color:#8a94a6; font-size:12px; margin-top:2px; }
 .detail .dlinks { margin-top:16px; }
+.detail .msgbody { margin-top:6px; font-size:12px; color:var(--txt); white-space:pre-wrap; word-break:break-word; max-height:160px; overflow:auto; background:#0c111b; border:1px solid var(--line); border-radius:6px; padding:8px; }
+.detail .bodyload { color:#8a94a6; }

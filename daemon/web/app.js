@@ -11,6 +11,7 @@ const appEl = document.getElementById("app");
 let lastModel = null;
 const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null };
 let selected = new Set();
+const bodyCache = new Map(); // emailId -> { text } | { error }
 
 async function load() {
   const model = await (await fetch("/model")).json();
@@ -41,11 +42,31 @@ function draw() {
     const cb = appEl.querySelector(`[data-select="${CSS.escape(id)}"]`);
     if (cb) cb.checked = true;
   }
+  if (ui.detailItemId) loadBodies(findItem(view, ui.detailItemId));
 }
 
 async function post(url) {
   await fetch(url, { method: "POST" });
   await load();
+}
+
+function fillBody(el, v) {
+  el.textContent = v.error ? `⚠ ${v.error}` : (v.text || "(empty)");
+}
+
+function loadBodies(item) {
+  if (!item) return;
+  for (const m of item.group?.members || []) {
+    const id = m.emailId;
+    if (!id) continue;
+    const el = appEl.querySelector(`[data-body-for="${CSS.escape(id)}"]`);
+    if (!el) continue;
+    if (bodyCache.has(id)) { fillBody(el, bodyCache.get(id)); continue; }
+    fetch(`/messages/${encodeURIComponent(id)}/body?account=${encodeURIComponent(item.account)}`)
+      .then(r => r.json())
+      .then(d => { const v = d.ok === false ? { error: d.error || "error" } : { text: d.body || "" }; bodyCache.set(id, v); fillBody(el, v); })
+      .catch(() => fillBody(el, { error: "Couldn't load body" }));
+  }
 }
 
 appEl.addEventListener("click", (e) => {
