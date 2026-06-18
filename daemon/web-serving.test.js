@@ -14,6 +14,8 @@ before(async () => {
   mkdirSync(webDir, { recursive: true });
   writeFileSync(join(webDir, "index.html"), "<!doctype html><title>Panel</title><div id=app></div>");
   writeFileSync(join(webDir, "app.js"), "export const x = 1;");
+  writeFileSync(join(webDir, "styles.css"), "body{color:red}");
+  writeFileSync(join(webDir, "blob.xyz"), "raw");
   const sibling = join(dir, "web-secret");
   mkdirSync(sibling, { recursive: true });
   writeFileSync(join(sibling, "leak.txt"), "SECRET");
@@ -50,5 +52,15 @@ describe("static serving", () => {
   it("blocks a sibling directory that shares the web dir name prefix", async () => {
     const res = await fetch(`${base}/..%2fweb-secret%2fleak.txt`);
     assert.equal(res.status, 404);
+  });
+  it("serves css as text/css", async () => {
+    const res = await fetch(`${base}/styles.css`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /text\/css/);
+  });
+  it("serves an unknown extension as application/octet-stream", async () => {
+    const res = await fetch(`${base}/blob.xyz`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /application\/octet-stream/);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { decideNotification, buildToastPowerShell } from "./notifier.js";
+import { decideNotification, buildToastPowerShell, notify } from "./notifier.js";
 
 describe("decideNotification", () => {
   it("notifies about newly at-risk items", () => {
@@ -16,6 +16,17 @@ describe("decideNotification", () => {
   });
   it("returns null when nothing is toast-worthy", () => {
     assert.equal(decideNotification({ newAtRisk: [], staleFlips: [] }), null);
+  });
+});
+
+describe("notify (no-op paths)", () => {
+  it("returns nothing-toast-worthy on an empty diff (no spawn)", () => {
+    assert.deepEqual(notify({ newAtRisk: [], staleFlips: [] }), { shown: false, reason: "nothing-toast-worthy" });
+  });
+  it("returns not-windows on a non-win32 platform (no spawn)", () => {
+    const r = notify({ newAtRisk: [{ title: "x" }], staleFlips: [] }, { platform: "linux" });
+    assert.equal(r.shown, false);
+    assert.equal(r.reason, "not-windows");
   });
 });
 
