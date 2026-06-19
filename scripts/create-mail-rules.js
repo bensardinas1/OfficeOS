@@ -22,7 +22,7 @@ if (!accountId) { console.error("Usage: node scripts/create-mail-rules.js <accou
 const email = process.env[`${accountId.toUpperCase()}_EMAIL`];
 if (!email) { console.error(`Missing ${accountId.toUpperCase()}_EMAIL in .env`); process.exit(1); }
 
-const client = await buildGraphClient(accountId);
+const client = await buildGraphClient(accountId, ["MailboxSettings.ReadWrite"]);
 const base = `/users/${email}`;
 
 // 1. Security folder — find or create.

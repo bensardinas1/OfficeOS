@@ -25,7 +25,7 @@ function saveTokenCache(companyId, data) {
  * Build an authenticated Microsoft Graph client using OAuth device flow.
  * Tokens are cached locally in data/.token-cache.json and refreshed automatically.
  */
-export async function buildGraphClient(companyId) {
+export async function buildGraphClient(companyId, extraScopes = []) {
   const prefix = companyId.toUpperCase();
   const tenantId = process.env[`${prefix}_TENANT_ID`];
   const clientId = process.env[`${prefix}_CLIENT_ID`];
@@ -55,7 +55,7 @@ export async function buildGraphClient(companyId) {
     cache: { cachePlugin },
   });
 
-  const scopes = ["Mail.Read", "Mail.ReadWrite", "Mail.Send", "User.Read", "offline_access"];
+  const scopes = ["Mail.Read", "Mail.ReadWrite", "Mail.Send", "User.Read", "offline_access", ...extraScopes];
 
   // Try silent auth from cache first
   let accessToken = null;
