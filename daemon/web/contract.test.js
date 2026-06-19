@@ -31,4 +31,10 @@ describe("panel render↔handler contract", () => {
     assert.match(render, /data-undo/, "render must emit the undo button");
     assert.match(app, /\[data-undo\]/, "app must select [data-undo]");
   });
+  it("app handles delete and killlist actions the cards emit", () => {
+    for (const attr of ["data-delete", "data-killlist"]) {
+      assert.match(render, new RegExp(attr), `render must emit ${attr}`);
+      assert.match(app, new RegExp(`\\[${attr}\\]`), `app must select [${attr}]`);
+    }
+  });
 });

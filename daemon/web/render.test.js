@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -212,5 +212,29 @@ describe("relativeTime", () => {
   it("returns empty string for missing/invalid input", () => {
     assert.equal(relativeTime(null, now), "");
     assert.equal(relativeTime("not-a-date", now), "");
+  });
+});
+
+describe("destructive buttons + confirm", () => {
+  const gw = {
+    id: "brickell:gateway:nmi:1", account: "brickell", jobType: "gateway", title: "T", status: "at_risk",
+    group: { rootCause: "r", members: [{ subject: "s", emailId: "e1", from: "support@nmi.com", fromName: "NMI" }] },
+    display: { primarySender: "NMI", messageCount: 1, latestDate: null, accountLabel: "Brickell Pay" },
+    source: [], proposals: [],
+  };
+  it("renders Delete + Kill list buttons on a card", () => {
+    const html = renderItemCard(gw, 0);
+    assert.match(html, /data-delete="brickell"/);
+    assert.match(html, /data-killlist="brickell"/);
+    assert.match(html, /Delete/);
+    assert.match(html, /Kill list/);
+  });
+  it("shows a confirm label when the confirm token matches", () => {
+    const html = renderItemCard(gw, 0, { confirm: "del:tile:brickell:gateway:nmi:1" });
+    assert.match(html, /Confirm/);
+  });
+  it("renderNoticeBar shows a message + empty when null", () => {
+    assert.match(renderNoticeBar("Moved 2 to Trash"), /Moved 2 to Trash/);
+    assert.equal(renderNoticeBar(null), "");
   });
 });

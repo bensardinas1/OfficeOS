@@ -11,6 +11,18 @@ export function safeUrl(url) {
   return /^https?:\/\//i.test(String(url || "")) ? url : null;
 }
 
+// Two-click confirm: a button shows "Confirm <verb>?" when `confirm` equals its token.
+function confirmBtn({ cls, attr, value, extra = "", token, verb, confirm, disabled = false }) {
+  const armed = confirm && confirm === token;
+  const label = armed ? `Confirm ${verb}?` : verb[0].toUpperCase() + verb.slice(1);
+  return `<button class="${cls}${armed ? " armed" : ""}" ${attr}="${esc(value)}"${extra} data-token="${esc(token)}"${disabled ? " disabled" : ""}>${esc(label)}</button>`;
+}
+
+export function renderNoticeBar(notice) {
+  if (!notice) return "";
+  return `<div class="notice"><span>${esc(notice)}</span></div>`;
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Deterministic relative-time label. nowMs is injected so tests don't depend on the clock. */
@@ -43,8 +55,9 @@ export function renderHeader(view) {
 const ACTION_LABELS = { draft_chase: "Draft a follow-up email" };
 const CHIP_LABELS = { handled: "summary" };
 
-export function renderItemCard(item, nowMs = Date.now()) {
+export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const d = item.display || {};
+  const confirm = opts.confirm || null;
   const pending = (item.proposals || []).find(p => p.state === "pending");
   const routeUrl = safeUrl((item.source || []).find(s => s.kind === "url")?.url);
   const approveBtn = pending
@@ -57,14 +70,20 @@ export function renderItemCard(item, nowMs = Date.now()) {
     ? `<button class="ack" data-ack="${esc(item.id)}" data-fp="${esc(item.fingerprint || "")}">Acknowledge</button>` : "";
   const detailBtn = `<button class="detail" data-detail="${esc(item.id)}">Details</button>`;
 
+  const members = item.group?.members || [];
+  const ids = members.map(m => m.emailId).filter(Boolean).join(",");
+  const senders = [...new Set(members.map(m => m.from).filter(Boolean))];
+  const delBtn = ids
+    ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:tile:${item.id}`, verb: "delete", confirm })
+    : "";
+  const killBtn = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(senders[0] || "")}"`, token: `kill:tile:${item.id}`, verb: "kill list", confirm, disabled: senders.length !== 1 });
+
   const when = relativeTime(d.latestDate, nowMs);
-  const count = d.messageCount ?? (item.group?.members || []).length;
+  const count = d.messageCount ?? members.length;
   const senderSub = [
     d.primarySender ? esc(d.primarySender) : "",
     count ? `${count} message${count === 1 ? "" : "s"}` : "",
   ].filter(Boolean).join(" · ");
-  // A normalizer may supply an explicit subtitle (e.g. the handled summary's
-  // secondary count); otherwise fall back to the sender · count line.
   const subline = (item.subtitle != null && item.subtitle !== "") ? esc(item.subtitle) : senderSub;
 
   return `<div class="card ${esc(item.status)}" data-item="${esc(item.id)}">`
@@ -73,24 +92,25 @@ export function renderItemCard(item, nowMs = Date.now()) {
     + `${when ? `<span class="when">${esc(when)}</span>` : ""}</div>`
     + `<div class="title">${esc(item.title)}</div>`
     + `${subline ? `<div class="meta">${subline}</div>` : ""}`
-    + `<div class="actions">${approveBtn}${routeBtn}${ackBtn}${detailBtn}${dismissBtn}</div></div>`;
+    + `<div class="actions">${approveBtn}${routeBtn}${ackBtn}${detailBtn}${delBtn}${killBtn}${dismissBtn}</div></div>`;
 }
 
-export function renderAccountSection(group, collapsed, nowMs = Date.now()) {
+export function renderAccountSection(group, collapsed, nowMs = Date.now(), opts = {}) {
   const need = group.atRiskCount || 0;
   const head = `<div class="sechdr" data-collapse="${esc(group.account)}">`
     + `<span class="chev">${collapsed ? "▸" : "▾"}</span>`
     + `<span class="seclabel">${esc(group.label || group.account)}</span>`
     + `<span class="sectype">${esc(group.accountType || "")}</span>`
     + `<span class="secneed">${esc(need)} need you</span></div>`;
-  const body = collapsed ? "" : `<div class="list">${group.items.map(i => renderItemCard(i, nowMs)).join("")}</div>`;
+  const body = collapsed ? "" : `<div class="list">${group.items.map(i => renderItemCard(i, nowMs, opts)).join("")}</div>`;
   return `<section class="acct">${head}${body}</section>`;
 }
 
-export function renderDetailPanel(item, nowMs = Date.now()) {
+export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
   if (!item) return "";
   const d = item.display || {};
   const g = item.group || {};
+  const confirm = opts.confirm || null;
   const statusLabel = item.status === "at_risk" ? "at risk" : (item.acknowledged ? "acknowledged" : "ok");
   const rows = [
     ["Inbox", d.accountLabel || item.account],
@@ -111,8 +131,11 @@ export function renderDetailPanel(item, nowMs = Date.now()) {
     const bodySlot = m.emailId
       ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
       : "";
+    const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm }) : "";
+    const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm }) : "";
     return `<div class="msg"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
       + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div>`
+      + `<div class="msgactions">${rowDel}${rowKill}</div>`
       + `${bodySlot}</div>`;
   }).join("");
 

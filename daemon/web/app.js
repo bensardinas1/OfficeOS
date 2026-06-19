@@ -1,15 +1,15 @@
 /**
  * app.js — thin DOM glue. Fetches /model, renders inbox-grouped sections via
- * render.js, live-reloads on SSE /events, posts approve/dismiss/ack, and drives
- * the collapse + slide-in detail UI. No business logic lives here.
+ * render.js, live-reloads on SSE /events, posts actions, and drives the collapse,
+ * slide-in detail, undo, two-click-confirm, and notice UI. No business logic here.
  */
 import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
-import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, renderUndoBar, esc } from "./render.js";
+import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, renderUndoBar, renderNoticeBar, esc } from "./render.js";
 import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 
@@ -23,13 +23,12 @@ function draw() {
   if (!lastModel) return;
   const now = Date.now();
   const view = toPanelView(lastModel);
-
-  // auto-close the detail panel if its item vanished (resolved/acked away)
   if (ui.detailItemId && !findItem(view, ui.detailItemId)) ui.detailItemId = null;
 
+  const opts = { confirm: ui.confirm };
   const groups = filterGroups(view, ui);
-  const sections = groups.map(g => renderAccountSection(g, ui.collapsed.has(g.account), now)).join("");
-  const detail = ui.detailItemId ? renderDetailPanel(findItem(view, ui.detailItemId), now) : "";
+  const sections = groups.map(g => renderAccountSection(g, ui.collapsed.has(g.account), now, opts)).join("");
+  const detail = ui.detailItemId ? renderDetailPanel(findItem(view, ui.detailItemId), now, opts) : "";
 
   appEl.innerHTML =
     renderHeader(view)
@@ -37,7 +36,8 @@ function draw() {
     + renderSelectControls(selected.size)
     + (sections || '<div class="empty">All clear.</div>')
     + detail
-    + renderUndoBar(ui.undo);
+    + renderUndoBar(ui.undo)
+    + renderNoticeBar(ui.notice);
 
   for (const id of selected) {
     const cb = appEl.querySelector(`[data-select="${CSS.escape(id)}"]`);
@@ -51,11 +51,22 @@ async function post(url) {
   await load();
 }
 
+async function postJson(url, payload) {
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+  return res.json();
+}
+
 function actThenOfferUndo(actionUrl, undo) {
   ui.undo = null;
   fetch(actionUrl, { method: "POST" })
     .then(() => load())
     .then(() => { ui.undo = undo; draw(); });
+}
+
+// Two-click confirm: first click arms (shows "Confirm …?"), second runs `go`.
+function confirmThen(token, go) {
+  if (ui.confirm === token) { ui.confirm = null; go(); }
+  else { ui.confirm = token; draw(); }
 }
 
 function fillBody(el, v) {
@@ -79,7 +90,19 @@ function loadBodies(item) {
 
 appEl.addEventListener("click", (e) => {
   const u = e.target.closest("[data-undo]");
-  if (u) { if (ui.undo) { const url = ui.undo.undoUrl; ui.undo = null; post(url); } return; }
+  if (u) { ui.confirm = null; ui.notice = null; if (ui.undo) { const url = ui.undo.undoUrl; ui.undo = null; post(url); } return; }
+  const del = e.target.closest("[data-delete]");
+  if (del) {
+    const token = del.dataset.token, account = del.dataset.delete, ids = (del.dataset.ids || "").split(",").filter(Boolean);
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
+  }
+  const kill = e.target.closest("[data-killlist]");
+  if (kill) {
+    const token = kill.dataset.token, account = kill.dataset.killlist, sender = kill.dataset.sender;
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
+  }
+  // any other action cancels an armed confirm + clears the notice
+  ui.confirm = null; ui.notice = null;
   const a = e.target.closest("[data-approve]");
   if (a) { ui.undo = null; return void post(`/proposals/${encodeURIComponent(a.dataset.approve)}/approve`); }
   const d = e.target.closest("[data-dismiss]");
