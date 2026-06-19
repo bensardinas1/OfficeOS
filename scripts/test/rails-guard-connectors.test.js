@@ -43,3 +43,12 @@ describe("connector rails guard — fetch-message is read-only", () => {
     assert.doesNotMatch(src, /\/move\b/, "must not move/delete messages");
   });
 });
+
+describe("connector rails guard — killlist-add writes config only", () => {
+  it("killlist-add.js never sends or deletes mail", () => {
+    const src = read("killlist-add.js");
+    const hits = [...SEND, ...PERM_DELETE].filter(rx => rx.test(src)).map(String);
+    assert.deepEqual(hits, [], `kill-list connector must not send/delete: ${hits.join(", ")}`);
+    assert.doesNotMatch(src, /deleteditems|messages\.trash|\/move\b/, "must not touch mail at all");
+  });
+});
