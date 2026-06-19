@@ -4,12 +4,12 @@
  * the collapse + slide-in detail UI. No business logic lives here.
  */
 import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
-import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, esc } from "./render.js";
+import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, renderUndoBar, esc } from "./render.js";
 import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 
@@ -36,7 +36,8 @@ function draw() {
     + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}"></div>`
     + renderSelectControls(selected.size)
     + (sections || '<div class="empty">All clear.</div>')
-    + detail;
+    + detail
+    + renderUndoBar(ui.undo);
 
   for (const id of selected) {
     const cb = appEl.querySelector(`[data-select="${CSS.escape(id)}"]`);
@@ -48,6 +49,13 @@ function draw() {
 async function post(url) {
   await fetch(url, { method: "POST" });
   await load();
+}
+
+function actThenOfferUndo(actionUrl, undo) {
+  ui.undo = null;
+  fetch(actionUrl, { method: "POST" })
+    .then(() => load())
+    .then(() => { ui.undo = undo; draw(); });
 }
 
 function fillBody(el, v) {
@@ -70,22 +78,25 @@ function loadBodies(item) {
 }
 
 appEl.addEventListener("click", (e) => {
+  const u = e.target.closest("[data-undo]");
+  if (u) { if (ui.undo) { const url = ui.undo.undoUrl; ui.undo = null; post(url); } return; }
   const a = e.target.closest("[data-approve]");
-  if (a) return void post(`/proposals/${encodeURIComponent(a.dataset.approve)}/approve`);
+  if (a) { ui.undo = null; return void post(`/proposals/${encodeURIComponent(a.dataset.approve)}/approve`); }
   const d = e.target.closest("[data-dismiss]");
-  if (d) return void post(`/proposals/${encodeURIComponent(d.dataset.dismiss)}/dismiss`);
+  if (d) { const id = d.dataset.dismiss; return void actThenOfferUndo(`/proposals/${encodeURIComponent(id)}/dismiss`, { label: "Dismissed", undoUrl: `/proposals/${encodeURIComponent(id)}/reopen` }); }
   const ack = e.target.closest("[data-ack]");
-  if (ack) return void post(`/items/${encodeURIComponent(ack.dataset.ack)}/acknowledge?fp=${encodeURIComponent(ack.dataset.fp || "")}`);
+  if (ack) { const id = ack.dataset.ack; return void actThenOfferUndo(`/items/${encodeURIComponent(id)}/acknowledge?fp=${encodeURIComponent(ack.dataset.fp || "")}`, { label: "Acknowledged", undoUrl: `/items/${encodeURIComponent(id)}/unacknowledge` }); }
   const close = e.target.closest("[data-detail-close]");
-  if (close) { ui.detailItemId = null; draw(); return; }
+  if (close) { ui.undo = null; ui.detailItemId = null; draw(); return; }
   const det = e.target.closest("[data-detail]");
-  if (det) { ui.detailItemId = det.dataset.detail; draw(); return; }
+  if (det) { ui.undo = null; ui.detailItemId = det.dataset.detail; draw(); return; }
   const col = e.target.closest("[data-collapse]");
-  if (col) { ui.collapsed = toggle(ui.collapsed, col.dataset.collapse); draw(); return; }
+  if (col) { ui.undo = null; ui.collapsed = toggle(ui.collapsed, col.dataset.collapse); draw(); return; }
   const s = e.target.closest("[data-select]");
-  if (s) { selected = toggle(selected, s.dataset.select); draw(); return; }
+  if (s) { ui.undo = null; selected = toggle(selected, s.dataset.select); draw(); return; }
   const bulk = e.target.closest("[data-bulk-approve]");
   if (bulk) {
+    ui.undo = null;
     const view = toPanelView(lastModel);
     const ids = pendingApprovalsFor(filterItems(view, ui), selected);
     selected = new Set();

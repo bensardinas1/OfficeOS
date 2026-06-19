@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -180,6 +180,20 @@ describe("renderAccountSection", () => {
     const html = renderAccountSection(group, true, 0);
     assert.match(html, /data-collapse="brickell"/);
     assert.doesNotMatch(html, /Item one/);
+  });
+});
+
+describe("renderUndoBar", () => {
+  it("renders the label and an Undo button when an undo is offered", () => {
+    const html = renderUndoBar({ label: "Dismissed", undoUrl: "/proposals/p1/reopen" });
+    assert.match(html, /Dismissed/);
+    assert.match(html, /data-undo/);
+  });
+  it("renders nothing when there is no undo", () => {
+    assert.equal(renderUndoBar(null), "");
+  });
+  it("escapes the label", () => {
+    assert.match(renderUndoBar({ label: "<img src=x>", undoUrl: "/x" }), /&lt;img/);
   });
 });
 

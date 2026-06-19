@@ -48,3 +48,6 @@ aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(560px,94v
 .detail .dlinks { margin-top:16px; }
 .detail .msgbody { margin-top:8px; font-size:14px; line-height:1.55; color:var(--txt); white-space:pre-wrap; word-break:break-word; max-height:60vh; overflow:auto; background:#0c111b; border:1px solid var(--line); border-radius:6px; padding:12px 14px; }
 .detail .bodyload { color:#8a94a6; }
+.snackbar { position:fixed; left:16px; bottom:16px; display:flex; align-items:center; gap:14px; background:#1b2740; border:1px solid var(--line); border-radius:8px; padding:8px 14px; box-shadow:0 4px 16px rgba(0,0,0,.4); z-index:20; }
+.snackbar .snacklabel { color:var(--txt); font-size:13px; }
+.snackbar .undo { background:transparent; color:var(--accent); border:none; font-weight:600; cursor:pointer; padding:2px 6px; }

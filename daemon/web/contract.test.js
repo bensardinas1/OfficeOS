@@ -27,4 +27,8 @@ describe("panel render↔handler contract", () => {
     assert.match(app, /\/messages\//, "app must fetch /messages/:id/body");
     assert.match(app, /data-body-for/, "app must fill the body placeholders");
   });
+  it("app handles the undo action the snackbar emits", () => {
+    assert.match(render, /data-undo/, "render must emit the undo button");
+    assert.match(app, /\[data-undo\]/, "app must select [data-undo]");
+  });
 });

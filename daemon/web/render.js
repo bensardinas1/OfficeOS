@@ -137,3 +137,9 @@ export function renderSelectControls(selectedCount) {
     <button class="bulk-approve" data-bulk-approve ${selectedCount ? "" : "disabled"}>✓ Approve selected</button>
   </div>`;
 }
+
+export function renderUndoBar(undo) {
+  if (!undo) return "";
+  return `<div class="snackbar"><span class="snacklabel">${esc(undo.label)}</span>`
+    + `<button class="undo" data-undo>Undo</button></div>`;
+}
