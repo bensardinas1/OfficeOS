@@ -134,7 +134,8 @@ appEl.addEventListener("click", (e) => {
       ui.undo = null; ui.notice = null;
       const dr = await postJson("/messages/delete", { account, emailIds: ids });
       const kr = await postJson("/senders/killlist", { account, sender });
-      ui.acted[key] = { deleted: true, killed: true, account, emailIds: ids, sender };
+      const deleted = dr.ok !== false, killed = !!kr.added;
+      if (deleted || killed) ui.acted[key] = { deleted, killed, account, emailIds: ids, sender };
       ui.notice = `Deleted ${dr.trashed ?? 0} · ${kr.added ? "kill-listed" : "kill-list: " + (kr.reason || kr.error)}`;
       await load();
     });
