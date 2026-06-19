@@ -135,4 +135,16 @@ describe("runTick", () => {
       assert.equal(acked.acknowledged, true);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it("emits a triage Cleanup item from getPendingDeletions", async () => {
+    const dir = tmp();
+    try {
+      const d = deps(dir, { getPendingDeletions: () => [{ id: "e1", accountId: "brickell", sender: "S", from: "s@x.com", subject: "junk", receivedAt: "2026-06-15T00:00:00Z" }] });
+      await runTick(d);
+      const model = d.store.getModel();
+      const t = model.items.find(i => i.jobType === "triage" && i.id === "brickell:triage");
+      assert.ok(t, "expected a triage item");
+      assert.equal(t.group.members[0].emailId, "e1");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

@@ -113,6 +113,17 @@ async function killlistFn(accountId, sender) {
   return JSON.parse(r.stdout);
 }
 
+function getPendingDeletions() {
+  try { return JSON.parse(readFileSync(join(root, "data/pending-deletions.json"), "utf-8")); }
+  catch { return null; }
+}
+
+async function runTriageFn(accountId) {
+  const r = await runProcess("node", [join(root, "scripts", "triage.js"), accountId || "all"], { timeoutMs: 120000 });
+  if (r.status !== 0) throw new Error(r.stderr || "triage failed");
+  return { ok: true };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const port = args.includes("--port") ? Number(args[args.indexOf("--port") + 1]) : DEFAULT_PORT;
@@ -134,6 +145,7 @@ async function main() {
     emit,
     reasonerFn: makeReasonerFn(runClaude),
     getAcks: () => ackStore.getAcks(),
+    getPendingDeletions,
   });
 
   if (once) {
@@ -143,7 +155,7 @@ async function main() {
   }
 
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
-  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody, deleteFn: makeDeleteFn(), killlistFn });
+  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody, deleteFn: makeDeleteFn(), killlistFn, runTriageFn, onTriage: () => tick() });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
   });

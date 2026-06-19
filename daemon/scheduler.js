@@ -52,7 +52,7 @@ export async function runTick(deps) {
       continue;
     }
 
-    const items = await runNormalizers(classifiedByFolder, account, typeConfig, { reasonerFn: deps.reasonerFn, nowMs: Date.parse(clock.now) });
+    const items = await runNormalizers(classifiedByFolder, account, typeConfig, { reasonerFn: deps.reasonerFn, nowMs: Date.parse(clock.now), pendingDeletions: deps.getPendingDeletions ? deps.getPendingDeletions() : null });
     // stamp lastChanged: keep prior timestamp if the item is unchanged
     for (const item of items) {
       const before = prevItemsById.get(item.id);

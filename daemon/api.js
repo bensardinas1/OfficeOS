@@ -42,7 +42,7 @@ function readJson(req) {
 }
 
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -165,6 +165,14 @@ export function createApiServer(deps) {
       if (!accounts.some(a => a.id === account) || !sender) return send(res, 400, { error: "account and sender required" });
       try { return send(res, 200, await killlistFn(account, sender)); }
       catch (err) { return send(res, 200, { ok: false, error: err.message }); }
+    }
+    if (req.method === "POST" && path === "/actions/triage") {
+      const body = await readJson(req);
+      try {
+        const r = await runTriageFn(body?.account || null);
+        if (onTriage) await onTriage();
+        return send(res, 200, { ok: true, ...r });
+      } catch (err) { return send(res, 200, { ok: false, error: err.message }); }
     }
 
     if (req.method === "GET") return serveStatic(path, res);

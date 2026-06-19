@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 
-let server, base, dir, store, acks;
+let server, base, dir, store, acks, triaged, reticked;
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "officeos-api-"));
@@ -29,8 +29,11 @@ before(async () => {
   const deleteFn = async (account, ids) => { deleted.push({ account, ids }); return { trashed: ids.length, failed: 0 }; };
   const killed = [];
   const killlistFn = async (account, sender) => { killed.push({ account, sender }); return sender.includes("vip") ? { added: false, reason: "protected sender" } : { added: true, value: sender }; };
+  triaged = 0; reticked = 0;
+  const runTriageFn = async () => { triaged++; return { ok: true }; };
+  const onTriage = async () => { reticked++; };
   server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" },
-    accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn });
+    accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -155,5 +158,15 @@ describe("POST /senders/killlist", () => {
   it("400s on unknown account or missing sender", async () => {
     assert.equal((await fetch(`${base}/senders/killlist`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "ghost", sender: "x@y.com" }) })).status, 400);
     assert.equal((await fetch(`${base}/senders/killlist`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell" }) })).status, 400);
+  });
+});
+
+describe("POST /actions/triage", () => {
+  it("runs triage and re-ticks", async () => {
+    const before = triaged;
+    const body = await (await fetch(`${base}/actions/triage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) })).json();
+    assert.equal(body.ok, true);
+    assert.equal(triaged, before + 1);
+    assert.ok(reticked >= 1);
   });
 });
