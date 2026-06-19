@@ -8,6 +8,7 @@ const TRANSITIONS = {
   pending: { approve: "approved", dismiss: "dismissed", snooze: "snoozed" },
   approved: { executed: "executed", failed: "failed" },
   snoozed: { approve: "approved", dismiss: "dismissed" },
+  dismissed: { reopen: "pending" },
 };
 
 export function transition(proposal, event) {

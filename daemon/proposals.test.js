@@ -55,4 +55,7 @@ describe("transition", () => {
   it("rejects an invalid transition", () => {
     assert.throws(() => transition({ state: "executed" }, "approve"), /invalid transition/i);
   });
+  it("reopen turns a dismissed proposal back to pending", () => {
+    assert.equal(transition({ state: "dismissed" }, "reopen").state, "pending");
+  });
 });

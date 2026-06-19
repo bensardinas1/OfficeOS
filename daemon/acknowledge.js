@@ -27,6 +27,11 @@ export function createAckStore(dataDir) {
       acks[itemId] = { fingerprint: fp, ackedAt: now };
       atomicWrite(path, JSON.stringify(acks, null, 2));
     },
+    removeAck: (itemId) => {
+      const acks = read();
+      delete acks[itemId];
+      atomicWrite(path, JSON.stringify(acks, null, 2));
+    },
     saveRaw: (raw) => writeFileSync(path, raw, "utf-8"),
   };
 }

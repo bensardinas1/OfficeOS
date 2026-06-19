@@ -34,6 +34,15 @@ describe("createAckStore", () => {
       assert.deepEqual(createAckStore(dir).getAcks(), {});
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+  it("removeAck deletes the key", () => {
+    const dir = tmp();
+    try {
+      const s = createAckStore(dir);
+      s.recordAck("i1", "fp1", "2026-06-17T00:00:00Z");
+      s.removeAck("i1");
+      assert.deepEqual(createAckStore(dir).getAcks(), {});
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe("applyAcks", () => {
