@@ -59,4 +59,20 @@ describe("normalizeHandled", () => {
     const items = normalizeHandled(classified, { id: "brickell" }, typeConfig, { lookbackHours: 168, nowMs: now });
     assert.deepEqual(items[0].group.counts, { needsYou: 1, waiting: 0 });
   });
+
+  it("populates members from non-ignore emails, newest-first, capped at 50", () => {
+    const emails = (n, cat) => Array.from({ length: n }, (_, i) => ({ id: `${cat}${i}`, subject: `${cat}-${i}`, from: `${cat}${i}@x.com`, fromName: cat, receivedAt: `2026-06-${String(1 + (i % 28)).padStart(2, "0")}T00:00:00Z` }));
+    const classified = { categories: { action: { emails: emails(30, "a") }, fyi: { emails: emails(40, "f") }, ignore: { emails: emails(5, "ig") } } };
+    const it0 = normalizeHandled(classified, account, typeConfig)[0];
+    assert.equal(it0.group.members.length, 50);
+    assert.equal(it0.group.moreCount, 20);
+    assert.ok(it0.group.members[0].receivedAt >= it0.group.members[1].receivedAt);
+    assert.ok(!it0.group.members.some(m => m.emailId.startsWith("ig")));
+    assert.ok("subject" in it0.group.members[0] && "from" in it0.group.members[0] && "emailId" in it0.group.members[0]);
+  });
+  it("sets moreCount 0 and keeps members empty when nothing is non-ignore", () => {
+    const it0 = normalizeHandled(classifiedWith({ ignore: 4 }), account, typeConfig)[0];
+    assert.equal(it0.group.members.length, 0);
+    assert.equal(it0.group.moreCount, 0);
+  });
 });

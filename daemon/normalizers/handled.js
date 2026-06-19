@@ -19,15 +19,18 @@ export function normalizeHandled(classified, account, typeConfig, opts = {}) {
   const { lookbackHours, nowMs = Date.now() } = opts;
   let needsYou = 0;
   let waiting = 0;
+  const all = [];
   for (const [id, bucket] of Object.entries(classified.categories || {})) {
     if (id === "ignore") continue;
-    const emails = bucket.emails || [];
-    const n = lookbackHours
-      ? emails.filter(e => withinLookback(e, lookbackHours, nowMs)).length
-      : emails.length;
-    if (actionable.has(id)) needsYou += n;
-    else waiting += n;
+    const emails = (bucket.emails || []).filter(e => !lookbackHours || withinLookback(e, lookbackHours, nowMs));
+    if (actionable.has(id)) needsYou += emails.length; else waiting += emails.length;
+    for (const e of emails) all.push({ subject: e.subject, from: e.from, fromName: e.fromName, receivedAt: e.receivedAt || e.received, emailId: e.id });
   }
+  all.sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
+  const CAP = 50;
+  const members = all.slice(0, CAP);
+  const moreCount = Math.max(0, all.length - CAP);
+
   // Lead with the one number that requires the user (a reply or decision);
   // demote the heterogeneous "everything else" pile to a quiet subtitle.
   const title = needsYou > 0
@@ -41,7 +44,7 @@ export function normalizeHandled(classified, account, typeConfig, opts = {}) {
     title,
     subtitle,
     status: "ok",
-    group: { rootCause: "handled", members: [], counts: { needsYou, waiting } },
+    group: { rootCause: "handled", members, moreCount, counts: { needsYou, waiting } },
     source: [],
     proposedActions: [],
     lastChanged: null,
