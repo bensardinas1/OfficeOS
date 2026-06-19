@@ -88,6 +88,31 @@ async function fetchBody(accountId, emailId) {
   return JSON.parse(r.stdout);
 }
 
+function makeDeleteFn() {
+  const { companies } = loadConfig();
+  // Chunk ids so argv never overflows on Windows (~8k char limit); sum results.
+  return async (accountId, ids) => {
+    const account = companies.companies.find(c => c.id === accountId);
+    const script = account?.provider === "gmail" ? "delete-gmail-emails.js" : "delete-emails.js";
+    let trashed = 0, failed = 0;
+    for (let i = 0; i < ids.length; i += 20) {
+      const chunk = ids.slice(i, i + 20);
+      const r = await runProcess("node", [join(root, "scripts", script), accountId, ...chunk]);
+      if (r.status !== 0) throw new Error(r.stderr || `delete failed for ${accountId}`);
+      const m = /Done:\s*(\d+) trashed(?:,\s*(\d+) failed)?/.exec(r.stdout);
+      trashed += m ? Number(m[1]) : 0;
+      failed += m && m[2] ? Number(m[2]) : 0;
+    }
+    return { trashed, failed };
+  };
+}
+
+async function killlistFn(accountId, sender) {
+  const r = await runProcess("node", [join(root, "scripts", "killlist-add.js"), accountId], { input: JSON.stringify({ sender }) });
+  if (r.status !== 0) throw new Error(r.stderr || `killlist-add failed for ${accountId}`);
+  return JSON.parse(r.stdout);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const port = args.includes("--port") ? Number(args[args.indexOf("--port") + 1]) : DEFAULT_PORT;
@@ -118,7 +143,7 @@ async function main() {
   }
 
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
-  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody });
+  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody, deleteFn: makeDeleteFn(), killlistFn });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
   });

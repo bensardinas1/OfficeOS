@@ -32,8 +32,17 @@ function send(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
+function readJson(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => { try { resolve(JSON.parse(raw || "{}")); } catch { resolve(null); } });
+    req.on("error", () => resolve(null));
+  });
+}
+
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -141,6 +150,21 @@ export function createApiServer(deps) {
       const id = decodeURIComponent(unackMatch[1]);
       ackStore?.removeAck(id);
       return send(res, 200, { ok: true, itemId: id });
+    }
+
+    if (req.method === "POST" && path === "/messages/delete") {
+      const body = await readJson(req);
+      const account = body?.account, ids = body?.emailIds;
+      if (!accounts.some(a => a.id === account) || !Array.isArray(ids) || ids.length === 0) return send(res, 400, { error: "account and non-empty emailIds required" });
+      try { return send(res, 200, await deleteFn(account, ids)); }
+      catch (err) { return send(res, 200, { ok: false, error: err.message }); }
+    }
+    if (req.method === "POST" && path === "/senders/killlist") {
+      const body = await readJson(req);
+      const account = body?.account, sender = body?.sender;
+      if (!accounts.some(a => a.id === account) || !sender) return send(res, 400, { error: "account and sender required" });
+      try { return send(res, 200, await killlistFn(account, sender)); }
+      catch (err) { return send(res, 200, { ok: false, error: err.message }); }
     }
 
     if (req.method === "GET") return serveStatic(path, res);
