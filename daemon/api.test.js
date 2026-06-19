@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 
-let server, base, dir, store;
+let server, base, dir, store, acks;
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "officeos-api-"));
@@ -15,11 +15,12 @@ before(async () => {
   store.saveQueue({ proposals: [
     { id: "p1", itemId: "i1", action: "route:billing_portal", params: {}, state: "pending" },
     { id: "p2", itemId: "i1", action: "draft_chase", params: {}, state: "pending" },
+    { id: "p3", itemId: "i1", action: "draft_chase", params: {}, state: "pending" },
   ] });
   const accountsById = { brickell: { id: "brickell", links: { billing_portal: "https://pay.example/portal" } } };
   const ctxFor = (proposal) => ({ account: accountsById[proposal.params?.account || "brickell"], saveDraftFn: async () => ({ draftId: "dX" }) });
-  const acks = {};
-  const ackStore = { recordAck: (id, fp) => { acks[id] = { fingerprint: fp }; }, getAcks: () => acks };
+  acks = {};
+  const ackStore = { recordAck: (id, fp) => { acks[id] = { fingerprint: fp }; }, removeAck: (id) => { delete acks[id]; }, getAcks: () => acks };
   const fetchBodyFn = async (account, emailId) => {
     if (emailId === "boom") throw new Error("nope");
     return { id: emailId, body: `body of ${emailId} for ${account}` };
@@ -45,7 +46,7 @@ describe("GET /model", () => {
   it("returns merged model + proposals", async () => {
     const body = await (await fetch(`${base}/model`)).json();
     assert.equal(body.items[0].id, "i1");
-    assert.equal(body.proposals.length, 2);
+    assert.equal(body.proposals.length, 3);
   });
 });
 
@@ -99,5 +100,27 @@ describe("GET /messages/:id/body", () => {
     const body = await (await fetch(`${base}/messages/boom/body?account=brickell`)).json();
     assert.equal(body.ok, false);
     assert.match(body.error, /nope/);
+  });
+});
+
+describe("POST /proposals/:id/reopen", () => {
+  it("turns a dismissed proposal back to pending", async () => {
+    await fetch(`${base}/proposals/p3/dismiss`, { method: "POST" });
+    const body = await (await fetch(`${base}/proposals/p3/reopen`, { method: "POST" })).json();
+    assert.equal(body.proposal.state, "pending");
+    assert.equal(createStore(dir).getQueue().proposals.find(p => p.id === "p3").state, "pending");
+  });
+  it("404s reopening an unknown proposal", async () => {
+    assert.equal((await fetch(`${base}/proposals/ghost/reopen`, { method: "POST" })).status, 404);
+  });
+});
+
+describe("POST /items/:id/unacknowledge", () => {
+  it("removes a recorded ack", async () => {
+    await fetch(`${base}/items/i9/acknowledge?fp=z`, { method: "POST" });
+    assert.ok(acks.i9);
+    const body = await (await fetch(`${base}/items/i9/unacknowledge`, { method: "POST" })).json();
+    assert.equal(body.ok, true);
+    assert.ok(!acks.i9);
   });
 });

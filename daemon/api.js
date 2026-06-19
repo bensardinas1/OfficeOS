@@ -64,6 +64,15 @@ export function createApiServer(deps) {
     return send(res, 200, { proposal: updated });
   }
 
+  function reopen(id, res) {
+    const queue = store.getQueue();
+    const proposal = queue.proposals.find(p => p.id === id);
+    if (!proposal) return send(res, 404, { error: "proposal not found" });
+    const updated = transition(proposal, "reopen");
+    persist(queue, id, updated);
+    return send(res, 200, { proposal: updated });
+  }
+
   function persist(queue, id, updated) {
     queue.proposals = queue.proposals.map(p => (p.id === id ? updated : p));
     store.saveQueue(queue);
@@ -117,12 +126,20 @@ export function createApiServer(deps) {
     if (req.method === "POST" && approveMatch) return approve(decodeURIComponent(approveMatch[1]), res);
     const dismissMatch = path.match(/^\/proposals\/([^/]+)\/dismiss$/);
     if (req.method === "POST" && dismissMatch) return dismiss(decodeURIComponent(dismissMatch[1]), res);
+    const reopenMatch = path.match(/^\/proposals\/([^/]+)\/reopen$/);
+    if (req.method === "POST" && reopenMatch) return reopen(decodeURIComponent(reopenMatch[1]), res);
 
     const ackMatch = path.match(/^\/items\/([^/]+)\/acknowledge$/);
     if (req.method === "POST" && ackMatch) {
       const id = decodeURIComponent(ackMatch[1]);
       const fp = url.searchParams.get("fp") || "";
       ackStore?.recordAck(id, fp, clock?.now ? clock.now() : new Date().toISOString());
+      return send(res, 200, { ok: true, itemId: id });
+    }
+    const unackMatch = path.match(/^\/items\/([^/]+)\/unacknowledge$/);
+    if (req.method === "POST" && unackMatch) {
+      const id = decodeURIComponent(unackMatch[1]);
+      ackStore?.removeAck(id);
       return send(res, 200, { ok: true, itemId: id });
     }
 
