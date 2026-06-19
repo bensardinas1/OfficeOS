@@ -30,6 +30,11 @@ function draw() {
   const sections = groups.map(g => renderAccountSection(g, ui.collapsed.has(g.account), now, opts)).join("");
   const detail = ui.detailItemId ? renderDetailPanel(findItem(view, ui.detailItemId), now, opts) : "";
 
+  // Preserve the detail pane's internal scroll across re-renders — clicking a
+  // button rebuilds the panel HTML, which would otherwise snap it back to top
+  // (moving the just-armed Confirm button and causing misclicks).
+  const detailScroll = appEl.querySelector(".detail")?.scrollTop || 0;
+
   appEl.innerHTML =
     renderHeader(view)
     + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging)}</div>`
@@ -38,6 +43,9 @@ function draw() {
     + detail
     + renderUndoBar(ui.undo)
     + renderNoticeBar(ui.notice);
+
+  const restoredDetail = appEl.querySelector(".detail");
+  if (restoredDetail) restoredDetail.scrollTop = detailScroll;
 
   for (const id of selected) {
     const cb = appEl.querySelector(`[data-select="${CSS.escape(id)}"]`);
