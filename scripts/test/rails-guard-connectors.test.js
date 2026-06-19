@@ -52,3 +52,19 @@ describe("connector rails guard — killlist-add writes config only", () => {
     assert.doesNotMatch(src, /deleteditems|messages\.trash|\/move\b/, "must not touch mail at all");
   });
 });
+
+describe("connector rails guard — restore + killlist-remove", () => {
+  for (const f of ["restore-emails.js", "restore-gmail-emails.js"]) {
+    it(`${f} restores (move/untrash) and never sends or permanent-deletes`, () => {
+      const src = read(f);
+      const hits = [...SEND, ...PERM_DELETE].filter(rx => rx.test(src)).map(String);
+      assert.deepEqual(hits, [], `${f} must not send/permanent-delete: ${hits.join(", ")}`);
+    });
+  }
+  it("killlist-remove.js never touches mail", () => {
+    const src = read("killlist-remove.js");
+    const hits = [...SEND, ...PERM_DELETE].filter(rx => rx.test(src)).map(String);
+    assert.deepEqual(hits, [], `must not send/delete: ${hits.join(", ")}`);
+    assert.doesNotMatch(src, /deleteditems|messages\.trash|\/move\b/, "config-only");
+  });
+});

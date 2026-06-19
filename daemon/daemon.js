@@ -113,6 +113,30 @@ async function killlistFn(accountId, sender) {
   return JSON.parse(r.stdout);
 }
 
+function makeRestoreFn() {
+  const { companies } = loadConfig();
+  return async (accountId, ids) => {
+    const account = companies.companies.find(c => c.id === accountId);
+    const script = account?.provider === "gmail" ? "restore-gmail-emails.js" : "restore-emails.js";
+    let restored = 0, failed = 0;
+    for (let i = 0; i < ids.length; i += 20) {
+      const chunk = ids.slice(i, i + 20);
+      const r = await runProcess("node", [join(root, "scripts", script), accountId, ...chunk]);
+      if (r.status !== 0) throw new Error(r.stderr || `restore failed for ${accountId}`);
+      const m = /Done:\s*(\d+) restored(?:,\s*(\d+) failed)?/.exec(r.stdout);
+      restored += m ? Number(m[1]) : 0;
+      failed += m && m[2] ? Number(m[2]) : 0;
+    }
+    return { restored, failed };
+  };
+}
+
+async function killlistRemoveFn(accountId, sender) {
+  const r = await runProcess("node", [join(root, "scripts", "killlist-remove.js"), accountId], { input: JSON.stringify({ sender }) });
+  if (r.status !== 0) throw new Error(r.stderr || `killlist-remove failed for ${accountId}`);
+  return JSON.parse(r.stdout);
+}
+
 function getPendingDeletions() {
   try { return JSON.parse(readFileSync(join(root, "data/pending-deletions.json"), "utf-8")); }
   catch { return null; }
@@ -155,7 +179,7 @@ async function main() {
   }
 
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
-  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody, deleteFn: makeDeleteFn(), killlistFn, runTriageFn, onTriage: () => tick() });
+  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody, deleteFn: makeDeleteFn(), killlistFn, runTriageFn, onTriage: () => tick(), restoreFn: makeRestoreFn(), killlistRemoveFn });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
   });

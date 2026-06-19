@@ -42,7 +42,7 @@ function readJson(req) {
 }
 
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -173,6 +173,20 @@ export function createApiServer(deps) {
         if (onTriage) await onTriage();
         return send(res, 200, { ok: true, ...r });
       } catch (err) { return send(res, 200, { ok: false, error: err.message }); }
+    }
+    if (req.method === "POST" && path === "/messages/restore") {
+      const body = await readJson(req);
+      const account = body?.account, ids = body?.emailIds;
+      if (!accounts.some(a => a.id === account) || !Array.isArray(ids) || ids.length === 0) return send(res, 400, { error: "account and non-empty emailIds required" });
+      try { return send(res, 200, await restoreFn(account, ids)); }
+      catch (err) { return send(res, 200, { ok: false, error: err.message }); }
+    }
+    if (req.method === "POST" && path === "/senders/killlist/remove") {
+      const body = await readJson(req);
+      const account = body?.account, sender = body?.sender;
+      if (!accounts.some(a => a.id === account) || !sender) return send(res, 400, { error: "account and sender required" });
+      try { return send(res, 200, await killlistRemoveFn(account, sender)); }
+      catch (err) { return send(res, 200, { ok: false, error: err.message }); }
     }
 
     if (req.method === "GET") return serveStatic(path, res);

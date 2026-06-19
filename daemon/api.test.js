@@ -32,8 +32,10 @@ before(async () => {
   triaged = 0; reticked = 0;
   const runTriageFn = async () => { triaged++; return { ok: true }; };
   const onTriage = async () => { reticked++; };
+  const restoreFn = async (account, ids) => ({ restored: ids.length, failed: 0 });
+  const killlistRemoveFn = async (account, sender) => (sender.includes("nope") ? { removed: false, reason: "not on the kill-list" } : { removed: true });
   server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" },
-    accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage });
+    accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -168,5 +170,27 @@ describe("POST /actions/triage", () => {
     assert.equal(body.ok, true);
     assert.equal(triaged, before + 1);
     assert.ok(reticked >= 1);
+  });
+});
+
+describe("POST /messages/restore", () => {
+  it("restores ids for a known account", async () => {
+    const body = await (await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["a", "b"] }) })).json();
+    assert.equal(body.restored, 2);
+  });
+  it("400s on unknown account / empty ids", async () => {
+    assert.equal((await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "ghost", emailIds: ["a"] }) })).status, 400);
+    assert.equal((await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: [] }) })).status, 400);
+  });
+});
+
+describe("POST /senders/killlist/remove", () => {
+  it("removes a sender", async () => {
+    const body = await (await fetch(`${base}/senders/killlist/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "promo@x.com" }) })).json();
+    assert.equal(body.removed, true);
+  });
+  it("surfaces removed:false when absent", async () => {
+    const body = await (await fetch(`${base}/senders/killlist/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "nope@x.com" }) })).json();
+    assert.equal(body.removed, false);
   });
 });
