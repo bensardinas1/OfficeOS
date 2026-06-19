@@ -75,7 +75,9 @@ function fillBody(el, v) {
 
 function loadBodies(item) {
   if (!item) return;
-  for (const m of item.group?.members || []) {
+  const members = item.group?.members || [];
+  if (members.length > 5) return; // large tiles use click-to-expand (data-loadbody)
+  for (const m of members) {
     const id = m.emailId;
     if (!id) continue;
     const el = appEl.querySelector(`[data-body-for="${CSS.escape(id)}"]`);
@@ -100,6 +102,27 @@ appEl.addEventListener("click", (e) => {
   if (kill) {
     const token = kill.dataset.token, account = kill.dataset.killlist, sender = kill.dataset.sender;
     return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
+  }
+  const lb = e.target.closest("[data-loadbody]");
+  if (lb) {
+    const id = lb.dataset.loadbody;
+    const v = toPanelView(lastModel);
+    const item = ui.detailItemId ? findItem(v, ui.detailItemId) : null;
+    const account = item?.account;
+    const el = appEl.querySelector(`[data-body-for="${CSS.escape(id)}"]`);
+    if (el && account) {
+      el.hidden = false;
+      lb.remove();
+      if (bodyCache.has(id)) { fillBody(el, bodyCache.get(id)); }
+      else {
+        el.textContent = "Loading…";
+        fetch(`/messages/${encodeURIComponent(id)}/body?account=${encodeURIComponent(account)}`)
+          .then(r => r.json())
+          .then(d => { const val = d.ok === false ? { error: d.error || "error" } : { text: d.body || "" }; bodyCache.set(id, val); fillBody(el, val); })
+          .catch(() => fillBody(el, { error: "Couldn't load body" }));
+      }
+    }
+    return;
   }
   // any other action cancels an armed confirm + clears the notice
   ui.confirm = null; ui.notice = null;

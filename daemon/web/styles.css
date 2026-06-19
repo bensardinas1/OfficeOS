@@ -57,3 +57,5 @@ aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(560px,94v
 .armed { outline:2px solid currentColor; }
 .msgactions { display:flex; gap:8px; margin-top:8px; }
 .notice { position:fixed; left:16px; bottom:60px; background:#1b2740; border:1px solid var(--line); border-radius:8px; padding:8px 14px; color:var(--txt); font-size:13px; z-index:20; }
+.showbody { background:transparent; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer; margin-top:8px; }
+.dmore { color:#8a94a6; font-size:12px; margin-top:10px; }

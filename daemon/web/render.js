@@ -125,19 +125,23 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
 
   const members = (g.members || []).slice()
     .sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
+  const autoBodies = members.length <= 5;
   const msgs = members.map(m => {
     const who = m.fromName || m.from || m.vendor || "";
     const when = relativeTime(m.receivedAt, nowMs);
-    const bodySlot = m.emailId
-      ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
+    const bodyRegion = m.emailId
+      ? (autoBodies
+          ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
+          : `<button class="showbody" data-loadbody="${esc(m.emailId)}">Show message</button><div class="msgbody" data-body-for="${esc(m.emailId)}" hidden></div>`)
       : "";
     const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm }) : "";
     const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm }) : "";
     return `<div class="msg"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
       + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div>`
       + `<div class="msgactions">${rowDel}${rowKill}</div>`
-      + `${bodySlot}</div>`;
+      + `${bodyRegion}</div>`;
   }).join("");
+  const moreNote = g.moreCount > 0 ? `<div class="dmore">+ ${esc(g.moreCount)} more not shown</div>` : "";
 
   const links = (item.source || [])
     .filter(s => s.kind === "url" && safeUrl(s.url))
@@ -149,7 +153,7 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
     + `<button class="detail-close" data-detail-close aria-label="Close">✕</button>`
     + `<div class="dtitle">${esc(item.title)}</div>`
     + `<div class="dmeta">${meta}</div>`
-    + `<div class="dmsgs-h">Messages</div><div class="dmsgs">${msgs}</div>`
+    + `<div class="dmsgs-h">Messages</div><div class="dmsgs">${msgs}</div>${moreNote}`
     + `${links ? `<div class="dlinks">${links}</div>` : ""}`
     + `</aside>`;
 }

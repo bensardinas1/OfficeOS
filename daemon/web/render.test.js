@@ -215,6 +215,29 @@ describe("relativeTime", () => {
   });
 });
 
+describe("detail body scaling", () => {
+  const mk = (n) => ({
+    id: "brickell:handled", account: "brickell", jobType: "handled", title: "T", status: "ok",
+    display: { accountLabel: "Brickell Pay" },
+    group: { rootCause: "handled", moreCount: n > 50 ? n - 50 : 0, members: Array.from({ length: Math.min(n, 50) }, (_, i) => ({ subject: `s${i}`, from: `a${i}@x.com`, fromName: "X", emailId: `e${i}`, receivedAt: `2026-06-${String(1 + (i % 28)).padStart(2, "0")}T00:00:00Z` })) },
+    source: [], proposals: [],
+  });
+  it("auto-loads bodies when ≤5 messages (data-body-for, no toggle)", () => {
+    const html = renderDetailPanel(mk(3), 0);
+    assert.match(html, /data-body-for="e0"/);
+    assert.doesNotMatch(html, /data-loadbody/);
+  });
+  it("uses click-to-expand when >5 messages (data-loadbody + hidden body)", () => {
+    const html = renderDetailPanel(mk(8), 0);
+    assert.match(html, /data-loadbody="e0"/);
+    assert.match(html, /Show message/);
+    assert.match(html, /data-body-for="e0" hidden/);
+  });
+  it("shows a '+N more' note when moreCount > 0", () => {
+    assert.match(renderDetailPanel(mk(60), 0), /\+ 10 more/);
+  });
+});
+
 describe("destructive buttons + confirm", () => {
   const gw = {
     id: "brickell:gateway:nmi:1", account: "brickell", jobType: "gateway", title: "T", status: "at_risk",

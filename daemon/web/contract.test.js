@@ -37,4 +37,8 @@ describe("panel render↔handler contract", () => {
       assert.match(app, new RegExp(`\\[${attr}\\]`), `app must select [${attr}]`);
     }
   });
+  it("app handles the click-to-expand body action", () => {
+    assert.match(render, /data-loadbody/, "render must emit data-loadbody for large tiles");
+    assert.match(app, /\[data-loadbody\]/, "app must select [data-loadbody]");
+  });
 });
