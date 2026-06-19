@@ -61,3 +61,8 @@ aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(560px,94v
 .dmore { color:#8a94a6; font-size:12px; margin-top:10px; }
 .runtriage { margin-left:8px; background:#23314a; color:var(--accent); border:1px solid var(--line); border-radius:8px; padding:8px 12px; cursor:pointer; }
 .runtriage[disabled] { opacity:.6; cursor:default; }
+.card.acted, .msg.acted { opacity:.55; }
+.card.acted .title, .msg.acted .msgsub { text-decoration:line-through; }
+.actedtag { font-size:12px; color:#8a94a6; }
+.delkill { background:#3a1f33; color:#e59ad6; }
+.delkill[disabled] { opacity:.4; cursor:default; }

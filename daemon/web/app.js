@@ -9,7 +9,7 @@ import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null, triaging: false };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null, triaging: false, acted: {} };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 
@@ -25,7 +25,7 @@ function draw() {
   const view = toPanelView(lastModel);
   if (ui.detailItemId && !findItem(view, ui.detailItemId)) ui.detailItemId = null;
 
-  const opts = { confirm: ui.confirm };
+  const opts = { confirm: ui.confirm, acted: ui.acted };
   const groups = filterGroups(view, ui);
   const sections = groups.map(g => renderAccountSection(g, ui.collapsed.has(g.account), now, opts)).join("");
   const detail = ui.detailItemId ? renderDetailPanel(findItem(view, ui.detailItemId), now, opts) : "";
@@ -101,15 +101,43 @@ function loadBodies(item) {
 appEl.addEventListener("click", (e) => {
   const u = e.target.closest("[data-undo]");
   if (u) { ui.confirm = null; ui.notice = null; if (ui.undo) { const url = ui.undo.undoUrl; ui.undo = null; post(url); } return; }
+  const ua = e.target.closest("[data-undo-acted]");
+  if (ua) {
+    const key = ua.dataset.undoActed, a = ui.acted[key];
+    if (!a) return;
+    return void (async () => {
+      ui.notice = null;
+      try {
+        if (a.deleted) { const r = await postJson("/messages/restore", { account: a.account, emailIds: a.emailIds }); if (r.ok === false) throw new Error(r.error); }
+        if (a.killed) { const r = await postJson("/senders/killlist/remove", { account: a.account, sender: a.sender }); if (r.ok === false) throw new Error(r.error); }
+        delete ui.acted[key]; ui.notice = "Undone"; await load();
+      } catch (err) { ui.notice = `Undo failed: ${err.message}`; draw(); }
+    })();
+  }
   const del = e.target.closest("[data-delete]");
   if (del) {
     const token = del.dataset.token, account = del.dataset.delete, ids = (del.dataset.ids || "").split(",").filter(Boolean);
-    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
+    const key = token.split(":").slice(2).join(":");
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); if (r.ok !== false) ui.acted[key] = { ...(ui.acted[key] || {}), deleted: true, account, emailIds: ids }; ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
   }
   const kill = e.target.closest("[data-killlist]");
   if (kill) {
     const token = kill.dataset.token, account = kill.dataset.killlist, sender = kill.dataset.sender;
-    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
+    const key = token.split(":").slice(2).join(":");
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); if (r.added) ui.acted[key] = { ...(ui.acted[key] || {}), killed: true, account, sender }; ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
+  }
+  const dk = e.target.closest("[data-delkill]");
+  if (dk) {
+    const token = dk.dataset.token, account = dk.dataset.delkill, ids = (dk.dataset.ids || "").split(",").filter(Boolean), sender = dk.dataset.sender;
+    const key = token.split(":").slice(2).join(":");
+    return void confirmThen(token, async () => {
+      ui.undo = null; ui.notice = null;
+      const dr = await postJson("/messages/delete", { account, emailIds: ids });
+      const kr = await postJson("/senders/killlist", { account, sender });
+      ui.acted[key] = { deleted: true, killed: true, account, emailIds: ids, sender };
+      ui.notice = `Deleted ${dr.trashed ?? 0} · ${kr.added ? "kill-listed" : "kill-list: " + (kr.reason || kr.error)}`;
+      await load();
+    });
   }
   const lb = e.target.closest("[data-loadbody]");
   if (lb) {

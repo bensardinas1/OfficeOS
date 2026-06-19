@@ -23,6 +23,13 @@ export function renderNoticeBar(notice) {
   return `<div class="notice"><span>${esc(notice)}</span></div>`;
 }
 
+function actedBadge(a) {
+  if (a.deleted && a.killed) return "Deleted + kill-listed";
+  if (a.deleted) return "Deleted";
+  if (a.killed) return "Kill-listed";
+  return "Acted";
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Deterministic relative-time label. nowMs is injected so tests don't depend on the clock. */
@@ -58,6 +65,7 @@ const CHIP_LABELS = { handled: "summary" };
 export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const d = item.display || {};
   const confirm = opts.confirm || null;
+  const acted = (opts.acted || {})[item.id];
   const pending = (item.proposals || []).find(p => p.state === "pending");
   const routeUrl = safeUrl((item.source || []).find(s => s.kind === "url")?.url);
   const approveBtn = pending
@@ -77,6 +85,7 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
     ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:tile:${item.id}`, verb: "delete", confirm })
     : "";
   const killBtn = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(senders[0] || "")}"`, token: `kill:tile:${item.id}`, verb: "kill list", confirm, disabled: senders.length !== 1 });
+  const delkillBtn = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(senders[0] || "")}"`, token: `delkill:tile:${item.id}`, verb: "Delete and Kill", confirm, disabled: !ids || senders.length !== 1 });
 
   const when = relativeTime(d.latestDate, nowMs);
   const count = d.messageCount ?? members.length;
@@ -86,13 +95,17 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   ].filter(Boolean).join(" · ");
   const subline = (item.subtitle != null && item.subtitle !== "") ? esc(item.subtitle) : senderSub;
 
-  return `<div class="card ${esc(item.status)}" data-item="${esc(item.id)}">`
+  const actions = acted
+    ? `<span class="actedtag">${esc(actedBadge(acted))}</span><button class="undo" data-undo-acted="${esc(item.id)}">Undo</button>`
+    : `${approveBtn}${routeBtn}${ackBtn}${detailBtn}${delBtn}${killBtn}${delkillBtn}${dismissBtn}`;
+
+  return `<div class="card ${esc(item.status)}${acted ? " acted" : ""}" data-item="${esc(item.id)}">`
     + `<label class="sel"><input type="checkbox" data-select="${esc(item.id)}"> select</label>`
     + `<div class="cardhdr"><span class="chip">${esc(CHIP_LABELS[item.jobType] || item.jobType || "")}</span>`
     + `${when ? `<span class="when">${esc(when)}</span>` : ""}</div>`
     + `<div class="title">${esc(item.title)}</div>`
     + `${subline ? `<div class="meta">${subline}</div>` : ""}`
-    + `<div class="actions">${approveBtn}${routeBtn}${ackBtn}${detailBtn}${delBtn}${killBtn}${dismissBtn}</div></div>`;
+    + `<div class="actions">${actions}</div></div>`;
 }
 
 export function renderAccountSection(group, collapsed, nowMs = Date.now(), opts = {}) {
@@ -111,6 +124,7 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
   const d = item.display || {};
   const g = item.group || {};
   const confirm = opts.confirm || null;
+  const acted = opts.acted || {};
   const statusLabel = item.status === "at_risk" ? "at risk" : (item.acknowledged ? "acknowledged" : "ok");
   const rows = [
     ["Inbox", d.accountLabel || item.account],
@@ -129,6 +143,7 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
   const msgs = members.map(m => {
     const who = m.fromName || m.from || m.vendor || "";
     const when = relativeTime(m.receivedAt, nowMs);
+    const ma = acted[m.emailId];
     const bodyRegion = m.emailId
       ? (autoBodies
           ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
@@ -136,9 +151,13 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
       : "";
     const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm }) : "";
     const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm }) : "";
-    return `<div class="msg"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
+    const rowDelkill = (m.emailId && m.from) ? confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(m.emailId)}" data-sender="${esc(m.from)}"`, token: `delkill:msg:${m.emailId}`, verb: "Delete and Kill", confirm }) : "";
+    const rowActions = ma
+      ? `<span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button>`
+      : `${rowDel}${rowKill}${rowDelkill}`;
+    return `<div class="msg${ma ? " acted" : ""}"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
       + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div>`
-      + `<div class="msgactions">${rowDel}${rowKill}</div>`
+      + `<div class="msgactions">${rowActions}</div>`
       + `${bodyRegion}</div>`;
   }).join("");
   const moreNote = g.moreCount > 0 ? `<div class="dmore">+ ${esc(g.moreCount)} more not shown</div>` : "";

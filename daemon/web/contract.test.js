@@ -45,4 +45,10 @@ describe("panel render↔handler contract", () => {
     assert.match(render, /data-run-triage/, "render must emit data-run-triage");
     assert.match(app, /\[data-run-triage\]/, "app must select [data-run-triage]");
   });
+  it("app handles delete-and-kill and per-item undo", () => {
+    for (const attr of ["data-delkill", "data-undo-acted"]) {
+      assert.match(render, new RegExp(attr), `render must emit ${attr}`);
+      assert.match(app, new RegExp(`\\[${attr}\\]`), `app must select [${attr}]`);
+    }
+  });
 });

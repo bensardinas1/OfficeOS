@@ -247,6 +247,31 @@ describe("renderRunTriage", () => {
   });
 });
 
+describe("acted state + delete-and-kill", () => {
+  const gw = {
+    id: "brickell:gateway:nmi:1", account: "brickell", jobType: "gateway", title: "T", status: "at_risk",
+    group: { rootCause: "r", members: [{ subject: "s", emailId: "e1", from: "support@nmi.com", fromName: "NMI" }] },
+    display: { primarySender: "NMI", messageCount: 1, latestDate: null, accountLabel: "Brickell Pay" },
+    source: [], proposals: [],
+  };
+  it("renders a Delete and Kill button on a card", () => {
+    assert.match(renderItemCard(gw, 0), /data-delkill="brickell"/);
+    assert.match(renderItemCard(gw, 0), /Delete and Kill/);
+  });
+  it("dims an acted tile with a badge + Undo instead of action buttons", () => {
+    const html = renderItemCard(gw, 0, { acted: { "brickell:gateway:nmi:1": { deleted: true, killed: true } } });
+    assert.match(html, /class="card[^"]*acted/);
+    assert.match(html, /Deleted \+ kill-listed/);
+    assert.match(html, /data-undo-acted="brickell:gateway:nmi:1"/);
+    assert.doesNotMatch(html, /data-delete=/);
+  });
+  it("dims an acted detail row with the right badge", () => {
+    const html = renderDetailPanel(gw, 0, { acted: { e1: { deleted: true } } });
+    assert.match(html, /data-undo-acted="e1"/);
+    assert.match(html, /Deleted/);
+  });
+});
+
 describe("destructive buttons + confirm", () => {
   const gw = {
     id: "brickell:gateway:nmi:1", account: "brickell", jobType: "gateway", title: "T", status: "at_risk",
