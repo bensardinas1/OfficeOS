@@ -285,6 +285,8 @@ function renderDeletionCandidates(allResults) {
         accountId: r.accountId,
         provider: r.provider,
         sender: e.fromName,
+        from: e.from,
+        receivedAt: e.receivedAt || e.received,
         subject: e.subject,
       });
     }

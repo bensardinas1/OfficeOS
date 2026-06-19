@@ -15,6 +15,7 @@ import { normalizeGateway } from "./gateway.js";
 import { normalizeAudit } from "./audit.js";
 import { normalizeExposed } from "./exposed.js";
 import { prepareEmails } from "./prepare.js";
+import { normalizeTriage } from "./triage.js";
 
 function flattenSourceEmails(classified, sourceCategories) {
   const out = [];
@@ -91,5 +92,6 @@ export async function runNormalizers(arg, account, typeConfig, opts = {}) {
     if (!adapter) continue;
     items.push(...await adapter(byFolder, account, typeConfig, opts));
   }
+  if (opts.pendingDeletions) items.push(...normalizeTriage(opts.pendingDeletions, account, opts));
   return items;
 }
