@@ -41,4 +41,8 @@ describe("panel render↔handler contract", () => {
     assert.match(render, /data-loadbody/, "render must emit data-loadbody for large tiles");
     assert.match(app, /\[data-loadbody\]/, "app must select [data-loadbody]");
   });
+  it("app handles the run-triage action", () => {
+    assert.match(render, /data-run-triage/, "render must emit data-run-triage");
+    assert.match(app, /\[data-run-triage\]/, "app must select [data-run-triage]");
+  });
 });

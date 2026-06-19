@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, renderRunTriage, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -235,6 +235,15 @@ describe("detail body scaling", () => {
   });
   it("shows a '+N more' note when moreCount > 0", () => {
     assert.match(renderDetailPanel(mk(60), 0), /\+ 10 more/);
+  });
+});
+
+describe("renderRunTriage", () => {
+  it("renders a Run triage button, disabled+labelled while running", () => {
+    assert.match(renderRunTriage(false), /data-run-triage/);
+    assert.match(renderRunTriage(false), /Run triage/);
+    assert.match(renderRunTriage(true), /disabled/);
+    assert.match(renderRunTriage(true), /Running/);
   });
 });
 

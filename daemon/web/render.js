@@ -170,3 +170,7 @@ export function renderUndoBar(undo) {
   return `<div class="snackbar"><span class="snacklabel">${esc(undo.label)}</span>`
     + `<button class="undo" data-undo>Undo</button></div>`;
 }
+
+export function renderRunTriage(running) {
+  return `<button class="runtriage" data-run-triage ${running ? "disabled" : ""}>${running ? "Running triage…" : "Run triage"}</button>`;
+}

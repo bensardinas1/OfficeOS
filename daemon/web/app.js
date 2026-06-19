@@ -4,12 +4,12 @@
  * slide-in detail, undo, two-click-confirm, and notice UI. No business logic here.
  */
 import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
-import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, renderUndoBar, renderNoticeBar, esc } from "./render.js";
+import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, renderUndoBar, renderNoticeBar, renderRunTriage, esc } from "./render.js";
 import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null, triaging: false };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 
@@ -32,7 +32,7 @@ function draw() {
 
   appEl.innerHTML =
     renderHeader(view)
-    + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}"></div>`
+    + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging)}</div>`
     + renderSelectControls(selected.size)
     + (sections || '<div class="empty">All clear.</div>')
     + detail
@@ -122,6 +122,18 @@ appEl.addEventListener("click", (e) => {
           .catch(() => fillBody(el, { error: "Couldn't load body" }));
       }
     }
+    return;
+  }
+  const rt = e.target.closest("[data-run-triage]");
+  if (rt) {
+    if (ui.triaging) return;
+    ui.confirm = null; ui.undo = null;
+    ui.triaging = true; ui.notice = "Running triage…"; draw();
+    postJson("/actions/triage", {}).then(r => {
+      ui.triaging = false;
+      ui.notice = r.ok === false ? `Triage failed: ${r.error}` : "Triage complete";
+      return load();
+    }).catch(() => { ui.triaging = false; ui.notice = "Triage failed"; draw(); });
     return;
   }
   // any other action cancels an armed confirm + clears the notice
