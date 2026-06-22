@@ -7,6 +7,7 @@
  * "N need you" count — the counts live in the title and group.counts.
  */
 import { withinLookback } from "./prepare.js";
+import { looksAutomated } from "../../scripts/sender-guards.js";
 
 function actionableIds(typeConfig) {
   const flagged = (typeConfig.triageCategories || []).filter(c => c.actionable).map(c => c.id);
@@ -23,7 +24,13 @@ export function normalizeHandled(classified, account, typeConfig, opts = {}) {
   for (const [id, bucket] of Object.entries(classified.categories || {})) {
     if (id === "ignore") continue;
     const emails = (bucket.emails || []).filter(e => !lookbackHours || withinLookback(e, lookbackHours, nowMs));
-    if (actionable.has(id)) needsYou += emails.length; else waiting += emails.length;
+    if (actionable.has(id)) {
+      for (const e of emails) {
+        if (looksAutomated(e.from, e.hasListUnsubscribe)) waiting++; else needsYou++;
+      }
+    } else {
+      waiting += emails.length;
+    }
     for (const e of emails) all.push({ subject: e.subject, from: e.from, fromName: e.fromName, receivedAt: e.receivedAt || e.received, emailId: e.id });
   }
   all.sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));

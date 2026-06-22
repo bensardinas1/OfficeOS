@@ -75,4 +75,17 @@ describe("normalizeHandled", () => {
     assert.equal(it0.group.members.length, 0);
     assert.equal(it0.group.moreCount, 0);
   });
+
+  it("counts automated/no-reply actionable mail as informational, not needs-a-reply", () => {
+    const classified = { categories: { action: { emails: [
+      { id: "p1", from: "wayne@brickellpay.com", subject: "decision?", receivedAt: "2026-06-20T00:00:00Z" },
+      { id: "a1", from: "noreply@brickellpay.com", subject: "alert", receivedAt: "2026-06-20T00:00:00Z" },
+      { id: "a2", from: "notifications@github.com", subject: "PR", receivedAt: "2026-06-20T00:00:00Z" },
+    ] } } };
+    const it0 = normalizeHandled(classified, account, typeConfig)[0];
+    assert.equal(it0.group.counts.needsYou, 1);
+    assert.equal(it0.group.counts.waiting, 2);
+    assert.equal(it0.group.members.length, 3);
+    assert.match(it0.title, /1 needs a reply or decision/);
+  });
 });
