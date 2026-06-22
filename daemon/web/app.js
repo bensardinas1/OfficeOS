@@ -72,9 +72,17 @@ function actThenOfferUndo(actionUrl, undo) {
 }
 
 // Two-click confirm: first click arms (shows "Confirm …?"), second runs `go`.
-function confirmThen(token, go) {
-  if (ui.confirm === token) { ui.confirm = null; go(); }
-  else { ui.confirm = token; draw(); }
+// If `go` rejects (e.g. the daemon is down / a POST fails), reset the button and
+// surface a notice instead of leaving it wedged on "Confirm?".
+async function confirmThen(token, go) {
+  if (ui.confirm === token) {
+    ui.confirm = null;
+    try { await go(); }
+    catch (err) { ui.notice = `Action failed: ${err?.message || err}`; draw(); }
+  } else {
+    ui.confirm = token;
+    draw();
+  }
 }
 
 function fillBody(el, v) {
