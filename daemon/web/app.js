@@ -15,7 +15,7 @@ const bodyCache = new Map(); // emailId -> { text } | { error }
 let desiredDetailScroll = 0; // detail-pane scroll to preserve across re-renders + async body fills
 
 function restoreDetailScroll() {
-  const dp = appEl.querySelector(".detail");
+  const dp = appEl.querySelector("aside.detail");
   if (dp) dp.scrollTop = desiredDetailScroll;
 }
 
@@ -40,7 +40,7 @@ function draw() {
   // that give the pane its height are filled by loadBodies (cached fills are
   // synchronous), so restore AFTER loadBodies — and loadBodies re-applies it
   // again once any async body fetch lands and the pane grows.
-  desiredDetailScroll = appEl.querySelector(".detail")?.scrollTop || 0;
+  desiredDetailScroll = appEl.querySelector("aside.detail")?.scrollTop || 0;
 
   appEl.innerHTML =
     renderHeader(view)
