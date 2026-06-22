@@ -12,6 +12,12 @@ let lastModel = null;
 const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null, triaging: false, acted: {} };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
+let desiredDetailScroll = 0; // detail-pane scroll to preserve across re-renders + async body fills
+
+function restoreDetailScroll() {
+  const dp = appEl.querySelector(".detail");
+  if (dp) dp.scrollTop = desiredDetailScroll;
+}
 
 async function load() {
   const model = await (await fetch("/model")).json();
@@ -30,10 +36,11 @@ function draw() {
   const sections = groups.map(g => renderAccountSection(g, ui.collapsed.has(g.account), now, opts)).join("");
   const detail = ui.detailItemId ? renderDetailPanel(findItem(view, ui.detailItemId), now, opts) : "";
 
-  // Preserve the detail pane's internal scroll across re-renders — clicking a
-  // button rebuilds the panel HTML, which would otherwise snap it back to top
-  // (moving the just-armed Confirm button and causing misclicks).
-  const detailScroll = appEl.querySelector(".detail")?.scrollTop || 0;
+  // Preserve the detail pane's internal scroll across re-renders. The bodies
+  // that give the pane its height are filled by loadBodies (cached fills are
+  // synchronous), so restore AFTER loadBodies — and loadBodies re-applies it
+  // again once any async body fetch lands and the pane grows.
+  desiredDetailScroll = appEl.querySelector(".detail")?.scrollTop || 0;
 
   appEl.innerHTML =
     renderHeader(view)
@@ -44,14 +51,12 @@ function draw() {
     + renderUndoBar(ui.undo)
     + renderNoticeBar(ui.notice);
 
-  const restoredDetail = appEl.querySelector(".detail");
-  if (restoredDetail) restoredDetail.scrollTop = detailScroll;
-
   for (const id of selected) {
     const cb = appEl.querySelector(`[data-select="${CSS.escape(id)}"]`);
     if (cb) cb.checked = true;
   }
   if (ui.detailItemId) loadBodies(findItem(view, ui.detailItemId));
+  restoreDetailScroll();
 }
 
 async function post(url) {
@@ -101,8 +106,8 @@ function loadBodies(item) {
     if (bodyCache.has(id)) { fillBody(el, bodyCache.get(id)); continue; }
     fetch(`/messages/${encodeURIComponent(id)}/body?account=${encodeURIComponent(item.account)}`)
       .then(r => r.json())
-      .then(d => { const v = d.ok === false ? { error: d.error || "error" } : { text: d.body || "" }; bodyCache.set(id, v); fillBody(el, v); })
-      .catch(() => fillBody(el, { error: "Couldn't load body" }));
+      .then(d => { const v = d.ok === false ? { error: d.error || "error" } : { text: d.body || "" }; bodyCache.set(id, v); fillBody(el, v); restoreDetailScroll(); })
+      .catch(() => { fillBody(el, { error: "Couldn't load body" }); restoreDetailScroll(); });
   }
 }
 
