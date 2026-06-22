@@ -51,4 +51,7 @@ describe("panel render↔handler contract", () => {
       assert.match(app, new RegExp(`\\[${attr}\\]`), `app must select [${attr}]`);
     }
   });
+  it("app marks per-member acted for cluster actions", () => {
+    assert.match(app, /:cluster:/, "app must recognize cluster tokens");
+  });
 });

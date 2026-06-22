@@ -90,6 +90,16 @@ async function confirmThen(token, go) {
   }
 }
 
+// Record an acted result. Cluster tokens (*:cluster:*) mark every member emailId
+// so each row in the sender group dims; tile/msg tokens key by their single id.
+function markActed(token, key, ids, patch) {
+  if (token.includes(":cluster:")) {
+    for (const id of ids) ui.acted[id] = { ...(ui.acted[id] || {}), ...patch, emailIds: [id] };
+  } else {
+    ui.acted[key] = { ...(ui.acted[key] || {}), ...patch };
+  }
+}
+
 function fillBody(el, v) {
   el.textContent = v.error ? `⚠ ${v.error}` : (v.text || "(empty)");
 }
@@ -131,13 +141,13 @@ appEl.addEventListener("click", (e) => {
   if (del) {
     const token = del.dataset.token, account = del.dataset.delete, ids = (del.dataset.ids || "").split(",").filter(Boolean);
     const key = token.split(":").slice(2).join(":");
-    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); if (r.ok !== false) ui.acted[key] = { ...(ui.acted[key] || {}), deleted: true, account, emailIds: ids }; ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); if (r.ok !== false) markActed(token, key, ids, { deleted: true, account, emailIds: ids }); ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
   }
   const kill = e.target.closest("[data-killlist]");
   if (kill) {
-    const token = kill.dataset.token, account = kill.dataset.killlist, sender = kill.dataset.sender;
+    const token = kill.dataset.token, account = kill.dataset.killlist, sender = kill.dataset.sender, ids = (kill.dataset.ids || "").split(",").filter(Boolean);
     const key = token.split(":").slice(2).join(":");
-    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); if (r.added) ui.acted[key] = { ...(ui.acted[key] || {}), killed: true, account, sender }; ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); if (r.added) markActed(token, key, ids, { killed: true, account, sender }); ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
   }
   const dk = e.target.closest("[data-delkill]");
   if (dk) {
@@ -148,7 +158,7 @@ appEl.addEventListener("click", (e) => {
       const dr = await postJson("/messages/delete", { account, emailIds: ids });
       const kr = await postJson("/senders/killlist", { account, sender });
       const deleted = dr.ok !== false, killed = !!kr.added;
-      if (deleted || killed) ui.acted[key] = { deleted, killed, account, emailIds: ids, sender };
+      if (deleted || killed) markActed(token, key, ids, { deleted, killed, account, emailIds: ids, sender });
       ui.notice = `Deleted ${dr.trashed ?? 0} · ${kr.added ? "kill-listed" : "kill-list: " + (kr.reason || kr.error)}`;
       await load();
     });
