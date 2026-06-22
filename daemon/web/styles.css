@@ -66,3 +66,8 @@ aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(560px,94v
 .actedtag { font-size:12px; color:#8a94a6; }
 .delkill { background:#3a1f33; color:#e59ad6; }
 .delkill[disabled] { opacity:.4; cursor:default; }
+.sendergrp { margin:10px 0; border-top:1px solid var(--line); padding-top:8px; }
+.sghdr { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+.sghdr .sgname { font-weight:600; }
+.sghdr .sgactions { margin-left:auto; display:flex; gap:6px; }
+.sendergrp .msg { padding:6px 0 6px 12px; border-top:none; }

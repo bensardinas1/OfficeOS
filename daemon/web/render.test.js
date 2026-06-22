@@ -295,3 +295,30 @@ describe("destructive buttons + confirm", () => {
     assert.equal(renderNoticeBar(null), "");
   });
 });
+
+describe("sender-clustered detail (handled/triage)", () => {
+  const handled = {
+    id: "brickellpay:handled", account: "brickellpay", jobType: "handled", title: "T", status: "ok",
+    display: { accountLabel: "Brickell Pay" },
+    group: { rootCause: "handled", members: [
+      { subject: "s1", from: "noreply@brickellpay.com", fromName: "Brickell Pay", emailId: "e1", receivedAt: "2026-06-20T00:00:00Z" },
+      { subject: "s2", from: "noreply@brickellpay.com", fromName: "Brickell Pay", emailId: "e2", receivedAt: "2026-06-21T00:00:00Z" },
+      { subject: "s3", from: "hello@secureframe.com", fromName: "Secureframe", emailId: "e3", receivedAt: "2026-06-19T00:00:00Z" },
+    ] },
+    source: [], proposals: [],
+  };
+  it("groups by sender with a header count and per-cluster bulk buttons", () => {
+    const html = renderDetailPanel(handled, 0);
+    assert.match(html, /Brickell Pay \(2\)/);
+    assert.match(html, /Secureframe \(1\)/);
+    assert.match(html, /data-delete="brickellpay" data-ids="e1,e2"/);
+    assert.match(html, /data-killlist="brickellpay" data-ids="e1,e2" data-sender="noreply@brickellpay.com"/);
+    assert.match(html, /data-delkill="brickellpay"/);
+    assert.doesNotMatch(html, /del:msg:e1/);
+  });
+  it("keeps finding tiles flat with per-row buttons", () => {
+    const gw = { id: "brickellpay:gateway:nmi:1", account: "brickellpay", jobType: "gateway", title: "T", status: "at_risk",
+      group: { rootCause: "r", members: [{ subject: "s", emailId: "e1", from: "support@nmi.com", fromName: "NMI" }] }, display: {}, source: [], proposals: [] };
+    assert.match(renderDetailPanel(gw, 0), /del:msg:e1/);
+  });
+});

@@ -137,29 +137,62 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
   const meta = rows.map(([k, v]) =>
     `<div class="drow"><span class="dk">${esc(k)}</span><span class="dv">${esc(v)}</span></div>`).join("");
 
-  const members = (g.members || []).slice()
+  const rawMembers = (g.members || []).slice();
+  const members = rawMembers.slice()
     .sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
   const autoBodies = members.length <= 5;
-  const msgs = members.map(m => {
-    const who = m.fromName || m.from || m.vendor || "";
-    const when = relativeTime(m.receivedAt, nowMs);
-    const ma = acted[m.emailId];
-    const bodyRegion = m.emailId
-      ? (autoBodies
-          ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
-          : `<button class="showbody" data-loadbody="${esc(m.emailId)}">Show message</button><div class="msgbody" data-body-for="${esc(m.emailId)}" hidden></div>`)
-      : "";
-    const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm }) : "";
-    const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm }) : "";
-    const rowDelkill = (m.emailId && m.from) ? confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(m.emailId)}" data-sender="${esc(m.from)}"`, token: `delkill:msg:${m.emailId}`, verb: "Delete and Kill", confirm }) : "";
-    const rowActions = ma
-      ? `<span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button>`
-      : `${rowDel}${rowKill}${rowDelkill}`;
-    return `<div class="msg${ma ? " acted" : ""}"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
-      + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div>`
-      + `<div class="msgactions">${rowActions}</div>`
-      + `${bodyRegion}</div>`;
-  }).join("");
+  const clustered = item.jobType === "handled" || item.jobType === "triage";
+
+  const bodyRegionFor = (m) => m.emailId
+    ? (autoBodies
+        ? `<div class="msgbody" data-body-for="${esc(m.emailId)}"><span class="bodyload">Loading…</span></div>`
+        : `<button class="showbody" data-loadbody="${esc(m.emailId)}">Show message</button><div class="msgbody" data-body-for="${esc(m.emailId)}" hidden></div>`)
+    : "";
+
+  let msgs;
+  if (clustered) {
+    // Group from original member order so ids are stable/predictable; then sort rows newest-first within each group.
+    const groups = new Map();
+    for (const m of rawMembers) {
+      const from = (m.from || "").toLowerCase();
+      const key = from || "__unknown__";
+      if (!groups.has(key)) groups.set(key, { from, label: m.fromName || m.from || "(unknown sender)", members: [] });
+      groups.get(key).members.push(m);
+    }
+    const ordered = [...groups.values()].sort((a, b) => b.members.length - a.members.length);
+    msgs = ordered.map(grp => {
+      const ids = grp.members.map(m => m.emailId).filter(Boolean).join(",");
+      const senderKey = (grp.from || "unknown").replace(/[^a-z0-9._@-]/gi, "_");
+      const delAll = confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, disabled: !ids });
+      const killAll = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `kill:cluster:${item.account}:${senderKey}`, verb: "kill list", confirm, disabled: !grp.from });
+      const dkAll = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delkill:cluster:${item.account}:${senderKey}`, verb: "Delete and Kill", confirm, disabled: !ids || !grp.from });
+      const sortedRows = grp.members.slice().sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
+      const rowsHtml = sortedRows.map(m => {
+        const ma = acted[m.emailId];
+        const when = relativeTime(m.receivedAt, nowMs);
+        const tag = ma ? `<div class="msgactions"><span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button></div>` : "";
+        return `<div class="msg${ma ? " acted" : ""}"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
+          + `<div class="msgmeta">${esc(when)}</div>${tag}${bodyRegionFor(m)}</div>`;
+      }).join("");
+      return `<div class="sendergrp"><div class="sghdr"><span class="sgname">${esc(grp.label)} (${grp.members.length})</span>`
+        + `<span class="sgactions">${delAll}${killAll}${dkAll}</span></div>${rowsHtml}</div>`;
+    }).join("");
+  } else {
+    msgs = members.map(m => {
+      const who = m.fromName || m.from || m.vendor || "";
+      const when = relativeTime(m.receivedAt, nowMs);
+      const ma = acted[m.emailId];
+      const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm }) : "";
+      const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm }) : "";
+      const rowDelkill = (m.emailId && m.from) ? confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(m.emailId)}" data-sender="${esc(m.from)}"`, token: `delkill:msg:${m.emailId}`, verb: "Delete and Kill", confirm }) : "";
+      const rowActions = ma
+        ? `<span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button>`
+        : `${rowDel}${rowKill}${rowDelkill}`;
+      return `<div class="msg${ma ? " acted" : ""}"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
+        + `<div class="msgmeta">${esc(who)}${who && when ? " · " : ""}${esc(when)}</div>`
+        + `<div class="msgactions">${rowActions}</div>${bodyRegionFor(m)}</div>`;
+    }).join("");
+  }
   const moreNote = g.moreCount > 0 ? `<div class="dmore">+ ${esc(g.moreCount)} more not shown</div>` : "";
 
   const links = (item.source || [])
