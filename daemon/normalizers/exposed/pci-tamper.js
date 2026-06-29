@@ -1,11 +1,13 @@
 /**
  * exposed/pci-tamper.js — pure recognizer for BrickellPay PCI tamper alerts.
- * The real email body is a JSON payload ({severity, changes:[{type,key,...}],
- * compromiseIndicators:[...]}) plus a labeled URL. Dedupe by the affected URL +
- * the set of changed keys, so identical re-alerts merge but distinct tampers
- * stay separate. Surfaces from the sandbox host (the monitored environment).
+ * The monitored environment (the sandbox host) emits a tamper alert per affected
+ * URL, so per-incident dedupe floods the panel with near-identical cards. We roll
+ * all tamper alerts of the same severity into ONE finding (identityKey
+ * pci:tamper:<severity>); the exposed normalizer keeps every individual alert as a
+ * member, so the drill-in still shows each one. The real per-URL detail lives in
+ * the PCI dashboard (link-out), never here.
  */
-import { senderMatches, shortHash } from "./util.js";
+import { senderMatches } from "./util.js";
 
 function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s; }
 
@@ -18,19 +20,11 @@ export function recognizePciTamper(email, cfg) {
   const sevSub = (email.subject || "").match(/-\s*(HIGH|CRITICAL|MEDIUM|LOW)\b/i);
   const severity = titleCase(sevJson?.[1] || sevSub?.[1] || "HIGH");
 
-  const changeKeys = [...text.matchAll(/"key"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
-  const indMatch = text.match(/"compromiseIndicators"\s*:\s*\[([^\]]*)\]/i);
-  const indicators = indMatch ? [...indMatch[1].matchAll(/"([^"]+)"/g)].map(m => m[1]) : [];
-
-  const urlm = text.match(/\bURL\s+(https?:\/\/\S+)/i) || text.match(/https?:\/\/\S*brickellpay\.com\S*/i);
-  const url = urlm ? (urlm[1] || urlm[0]).replace(/[).,]+$/, "") : cfg.portalUrl;
-
-  const what = indicators.join(", ") || changeKeys.join(", ") || "content modification";
   return {
     source: "pci_tamper",
-    identityKey: `pci:${shortHash(url + "|" + [...changeKeys].sort().join(","))}`,
+    identityKey: `pci:tamper:${severity.toLowerCase()}`,
     severity,
-    title: `${severity} · PCI tamper: ${what}`,
+    title: `${severity} · PCI tamper`,
     url: cfg.portalUrl,
   };
 }

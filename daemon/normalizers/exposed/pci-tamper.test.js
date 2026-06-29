@@ -7,12 +7,12 @@ const cfg = { senderDomains: ["brickellpay.com"], subjectMarkers: ["tamper detec
 const body = 'PCI Tamper Detection Alert {"severity":"HIGH","changes":[{"type":"modified","key":"criticalInputCount","oldValue":2,"newValue":0},{"type":"modified","key":"criticalContentHash","oldValue":"-15f43b28","newValue":"0"}],"compromiseIndicators":["content_injection","dom_manipulation"]} Detected Jun 17, 2026 at 20:12:58 UTC Client IP 67.38.44.241 URL https://sandbox.payments.brickellpay.com/admin/onboarding';
 
 describe("recognizePciTamper", () => {
-  it("parses severity, compromise indicators, and a stable id from the JSON body", () => {
+  it("parses severity and rolls up to one id + stable title per severity", () => {
     const f = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] Tamper Detection alert - HIGH", preview: body }, cfg);
     assert.equal(f.source, "pci_tamper");
     assert.equal(f.severity, "High");
-    assert.match(f.title, /content_injection/);
-    assert.match(f.identityKey, /^pci:/);
+    assert.equal(f.title, "High · PCI tamper");
+    assert.equal(f.identityKey, "pci:tamper:high");
     assert.ok(/brickellpay\.com/.test(f.url));
   });
 
@@ -20,6 +20,7 @@ describe("recognizePciTamper", () => {
     const crit = body.replace('"severity":"HIGH"', '"severity":"CRITICAL"');
     const f = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] Tamper Detection alert", preview: crit }, cfg);
     assert.equal(f.severity, "Critical");
+    assert.equal(f.identityKey, "pci:tamper:critical");
   });
 
   it("falls back to subject severity when JSON severity is absent", () => {
@@ -27,13 +28,13 @@ describe("recognizePciTamper", () => {
     assert.equal(f.severity, "High");
   });
 
-  it("gives different ids to different change-sets, same id to identical re-alerts", () => {
+  it("merges all same-severity alerts into one card and separates severities", () => {
     const a = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] x", preview: body }, cfg);
-    const a2 = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] x", preview: body }, cfg);
-    const diff = body.replace("criticalInputCount", "formCount").replace("criticalContentHash", "scriptCount");
-    const b = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] x", preview: diff }, cfg);
-    assert.equal(a.identityKey, a2.identityKey);     // identical re-alert merges
-    assert.notEqual(a.identityKey, b.identityKey);   // different tampered keys → distinct
+    const diffKeys = body.replace("criticalInputCount", "formCount").replace("criticalContentHash", "scriptCount");
+    const a2 = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] x", preview: diffKeys }, cfg);
+    const crit = recognizePciTamper({ from: "noreply@brickellpay.com", subject: "[PCI] x", preview: body.replace('"severity":"HIGH"', '"severity":"CRITICAL"') }, cfg);
+    assert.equal(a.identityKey, a2.identityKey);      // same severity, different change-sets → still one card
+    assert.notEqual(a.identityKey, crit.identityKey); // different severity → distinct card
   });
 
   it("returns null when sender/subject don't match", () => {
