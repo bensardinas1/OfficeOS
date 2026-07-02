@@ -9,7 +9,7 @@ import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, notice: null, triaging: false, acted: {} };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, notice: null, triaging: false, acted: {} };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 let desiredDetailScroll = 0; // detail-pane scroll to preserve across re-renders + async body fills
@@ -31,7 +31,7 @@ function draw() {
   const view = toPanelView(lastModel);
   if (ui.detailItemId && !findItem(view, ui.detailItemId)) ui.detailItemId = null;
 
-  const opts = { confirm: ui.confirm, acted: ui.acted };
+  const opts = { confirm: ui.confirm, busy: ui.busy, acted: ui.acted };
   const groups = filterGroups(view, ui);
   const sections = groups.map(g => renderAccountSection(g, ui.collapsed.has(g.account), now, opts)).join("");
   const detail = ui.detailItemId ? renderDetailPanel(findItem(view, ui.detailItemId), now, opts) : "";
@@ -81,9 +81,15 @@ function actThenOfferUndo(actionUrl, undo) {
 // surface a notice instead of leaving it wedged on "Confirm?".
 async function confirmThen(token, go) {
   if (ui.confirm === token) {
+    // Second click: disarm, mark the action in flight, and repaint immediately so
+    // the button shows a disabled "Working…" for the whole (possibly long, e.g. a
+    // multi-batch delete) operation instead of appearing stuck on "Confirm …?".
     ui.confirm = null;
+    ui.busy = token;
+    draw();
     try { await go(); }
-    catch (err) { ui.notice = `Action failed: ${err?.message || err}`; draw(); }
+    catch (err) { ui.notice = `Action failed: ${err?.message || err}`; }
+    finally { ui.busy = null; draw(); }
   } else {
     ui.confirm = token;
     draw();

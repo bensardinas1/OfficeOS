@@ -11,11 +11,14 @@ export function safeUrl(url) {
   return /^https?:\/\//i.test(String(url || "")) ? url : null;
 }
 
-// Two-click confirm: a button shows "Confirm <verb>?" when `confirm` equals its token.
-function confirmBtn({ cls, attr, value, extra = "", token, verb, confirm, disabled = false }) {
+// Two-click confirm: a button shows "Confirm <verb>?" when `confirm` equals its
+// token, and a disabled "Working…" while `busy` equals its token (the action is
+// in flight — prevents a double-submit during a long batch delete).
+function confirmBtn({ cls, attr, value, extra = "", token, verb, confirm, busy, disabled = false }) {
+  const isBusy = busy && busy === token;
   const armed = confirm && confirm === token;
-  const label = armed ? `Confirm ${verb}?` : verb[0].toUpperCase() + verb.slice(1);
-  return `<button class="${cls}${armed ? " armed" : ""}" ${attr}="${esc(value)}"${extra} data-token="${esc(token)}"${disabled ? " disabled" : ""}>${esc(label)}</button>`;
+  const label = isBusy ? "Working…" : (armed ? `Confirm ${verb}?` : verb[0].toUpperCase() + verb.slice(1));
+  return `<button class="${cls}${armed ? " armed" : ""}" ${attr}="${esc(value)}"${extra} data-token="${esc(token)}"${(disabled || isBusy) ? " disabled" : ""}>${esc(label)}</button>`;
 }
 
 export function renderNoticeBar(notice) {
@@ -65,6 +68,7 @@ const CHIP_LABELS = { handled: "summary" };
 export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const d = item.display || {};
   const confirm = opts.confirm || null;
+  const busy = opts.busy || null;
   const acted = (opts.acted || {})[item.id];
   const pending = (item.proposals || []).find(p => p.state === "pending");
   const routeUrl = safeUrl((item.source || []).find(s => s.kind === "url")?.url);
@@ -82,10 +86,10 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const ids = members.map(m => m.emailId).filter(Boolean).join(",");
   const senders = [...new Set(members.map(m => m.from).filter(Boolean))];
   const delBtn = ids
-    ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:tile:${item.id}`, verb: "delete", confirm })
+    ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:tile:${item.id}`, verb: "delete", confirm, busy })
     : "";
-  const killBtn = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(senders[0] || "")}"`, token: `kill:tile:${item.id}`, verb: "kill list", confirm, disabled: senders.length !== 1 });
-  const delkillBtn = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(senders[0] || "")}"`, token: `delkill:tile:${item.id}`, verb: "Delete and Kill", confirm, disabled: !ids || senders.length !== 1 });
+  const killBtn = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(senders[0] || "")}"`, token: `kill:tile:${item.id}`, verb: "kill list", confirm, busy, disabled: senders.length !== 1 });
+  const delkillBtn = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(senders[0] || "")}"`, token: `delkill:tile:${item.id}`, verb: "Delete and Kill", confirm, busy, disabled: !ids || senders.length !== 1 });
 
   const when = relativeTime(d.latestDate, nowMs);
   const count = d.messageCount ?? members.length;
@@ -124,6 +128,7 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
   const d = item.display || {};
   const g = item.group || {};
   const confirm = opts.confirm || null;
+  const busy = opts.busy || null;
   const acted = opts.acted || {};
   const statusLabel = item.status === "at_risk" ? "at risk" : (item.acknowledged ? "acknowledged" : "ok");
   const rows = [
@@ -163,9 +168,9 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
     msgs = ordered.map(grp => {
       const ids = grp.members.map(m => m.emailId).filter(Boolean).join(",");
       const senderKey = (grp.from || "unknown").replace(/[^a-z0-9._@-]/gi, "_");
-      const delAll = confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, disabled: !ids });
-      const killAll = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `kill:cluster:${item.account}:${senderKey}`, verb: "kill list", confirm, disabled: !grp.from });
-      const dkAll = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delkill:cluster:${item.account}:${senderKey}`, verb: "Delete and Kill", confirm, disabled: !ids || !grp.from });
+      const delAll = confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, busy, disabled: !ids });
+      const killAll = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `kill:cluster:${item.account}:${senderKey}`, verb: "kill list", confirm, busy, disabled: !grp.from });
+      const dkAll = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delkill:cluster:${item.account}:${senderKey}`, verb: "Delete and Kill", confirm, busy, disabled: !ids || !grp.from });
       const sortedRows = grp.members.slice().sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
       const rowsHtml = sortedRows.map(m => {
         const ma = acted[m.emailId];
@@ -182,9 +187,9 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
       const who = m.fromName || m.from || m.vendor || "";
       const when = relativeTime(m.receivedAt, nowMs);
       const ma = acted[m.emailId];
-      const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm }) : "";
-      const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm }) : "";
-      const rowDelkill = (m.emailId && m.from) ? confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(m.emailId)}" data-sender="${esc(m.from)}"`, token: `delkill:msg:${m.emailId}`, verb: "Delete and Kill", confirm }) : "";
+      const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm, busy }) : "";
+      const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm, busy }) : "";
+      const rowDelkill = (m.emailId && m.from) ? confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(m.emailId)}" data-sender="${esc(m.from)}"`, token: `delkill:msg:${m.emailId}`, verb: "Delete and Kill", confirm, busy }) : "";
       const rowActions = ma
         ? `<span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button>`
         : `${rowDel}${rowKill}${rowDelkill}`;

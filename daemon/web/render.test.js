@@ -290,6 +290,14 @@ describe("destructive buttons + confirm", () => {
     const html = renderItemCard(gw, 0, { confirm: "del:tile:brickell:gateway:nmi:1" });
     assert.match(html, /Confirm/);
   });
+  it("shows a disabled Working… button while the busy token matches (in flight)", () => {
+    const token = "del:tile:brickell:gateway:nmi:1";
+    const html = renderItemCard(gw, 0, { busy: token });
+    const btn = html.match(new RegExp(`<button[^>]*data-token="${token}"[^>]*>[^<]*</button>`))[0];
+    assert.match(btn, /Working…/);
+    assert.match(btn, /disabled/);
+    assert.doesNotMatch(btn, /Confirm/);
+  });
   it("renderNoticeBar shows a message + empty when null", () => {
     assert.match(renderNoticeBar("Moved 2 to Trash"), /Moved 2 to Trash/);
     assert.equal(renderNoticeBar(null), "");
