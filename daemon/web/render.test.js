@@ -245,6 +245,17 @@ describe("renderRunTriage", () => {
     assert.match(renderRunTriage(true), /disabled/);
     assert.match(renderRunTriage(true), /Running/);
   });
+  it("renders the window override radios + days field, field disabled in default mode", () => {
+    const html = renderRunTriage(false, { mode: "default", days: "10" });
+    assert.match(html, /data-triage-mode="default"[^>]* checked/);
+    assert.match(html, /id="triagedays"[^>]*value="10"/);
+    assert.match(html, /id="triagedays"[^>]* disabled/); // field disabled when not custom
+  });
+  it("enables the days field and checks custom when mode is custom", () => {
+    const html = renderRunTriage(false, { mode: "custom", days: "10" });
+    assert.match(html, /data-triage-mode="custom"[^>]* checked/);
+    assert.doesNotMatch(html.match(/id="triagedays"[^>]*>/)[0], /disabled/);
+  });
 });
 
 describe("acted state + delete-and-kill", () => {

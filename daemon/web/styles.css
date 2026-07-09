@@ -5,8 +5,12 @@ body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color
 .hdr .count { font-size:28px; font-weight:700; color:var(--risk); }
 .hdr .sub { color:#8a94a6; font-size:14px; }
 .stale { color:#c9a227; font-size:13px; margin-top:4px; }
-.filters { margin:8px 0; }
-.filters input { width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:#0c111b; color:var(--txt); }
+.filters { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0; }
+.filters #q { flex:1; min-width:160px; padding:8px; border-radius:8px; border:1px solid var(--line); background:#0c111b; color:var(--txt); }
+.triagewin { display:flex; align-items:center; gap:12px; color:#8a94a6; font-size:13px; white-space:nowrap; }
+.triagewin label { display:flex; align-items:center; gap:4px; cursor:pointer; }
+.triagedays { width:52px; padding:4px 6px; border-radius:6px; border:1px solid var(--line); background:#0c111b; color:var(--txt); }
+.triagedays:disabled { opacity:.4; }
 .list { display:flex; flex-direction:column; gap:10px; }
 .card { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--line); border-radius:10px; padding:12px; }
 .card.at_risk { border-left-color:var(--risk); }

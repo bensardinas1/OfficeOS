@@ -9,7 +9,7 @@ import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, notice: null, triaging: false, acted: {} };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, notice: null, triaging: false, triageMode: "default", triageDays: "10", acted: {} };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 let desiredDetailScroll = 0; // detail-pane scroll to preserve across re-renders + async body fills
@@ -44,7 +44,7 @@ function draw() {
 
   appEl.innerHTML =
     renderHeader(view)
-    + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging)}</div>`
+    + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging, { mode: ui.triageMode, days: ui.triageDays })}</div>`
     + renderSelectControls(selected.size)
     + (sections || '<div class="empty">All clear.</div>')
     + detail
@@ -190,12 +190,16 @@ appEl.addEventListener("click", (e) => {
     }
     return;
   }
+  const tm = e.target.closest("[data-triage-mode]");
+  if (tm) { ui.triageMode = tm.dataset.triageMode; draw(); return; }
   const rt = e.target.closest("[data-run-triage]");
   if (rt) {
     if (ui.triaging) return;
     ui.confirm = null; ui.undo = null;
-    ui.triaging = true; ui.notice = "Running triage…"; draw();
-    postJson("/actions/triage", {}).then(r => {
+    const days = ui.triageMode === "custom" ? Math.max(1, parseInt(ui.triageDays, 10) || 1) : null;
+    const payload = days ? { lookbackHours: days * 24 } : {};
+    ui.triaging = true; ui.notice = days ? `Running triage (last ${days}d)…` : "Running triage…"; draw();
+    postJson("/actions/triage", payload).then(r => {
       ui.triaging = false;
       ui.notice = r.ok === false ? `Triage failed: ${r.error}` : "Triage complete";
       return load();
@@ -230,6 +234,8 @@ appEl.addEventListener("click", (e) => {
 
 appEl.addEventListener("input", (e) => {
   if (e.target.id === "q") { ui.query = e.target.value; draw(); }
+  // Store without redrawing so the field keeps focus while the user types.
+  else if (e.target.id === "triagedays") { ui.triageDays = e.target.value; }
 });
 
 document.addEventListener("keydown", (e) => {

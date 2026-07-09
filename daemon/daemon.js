@@ -142,8 +142,10 @@ function getPendingDeletions() {
   catch { return null; }
 }
 
-async function runTriageFn(accountId) {
-  const r = await runProcess("node", [join(root, "scripts", "triage.js"), accountId || "all"], { timeoutMs: 120000 });
+async function runTriageFn(accountId, lookbackHours) {
+  const args = [join(root, "scripts", "triage.js"), accountId || "all"];
+  if (lookbackHours) args.push(String(lookbackHours)); // positional: <accounts> <hours>
+  const r = await runProcess("node", args, { timeoutMs: 120000 });
   if (r.status !== 0) throw new Error(r.stderr || "triage failed");
   return { ok: true };
 }

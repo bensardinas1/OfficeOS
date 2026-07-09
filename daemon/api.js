@@ -168,8 +168,12 @@ export function createApiServer(deps) {
     }
     if (req.method === "POST" && path === "/actions/triage") {
       const body = await readJson(req);
+      // Optional lookback override (hours). Clamp to a sane range so the UI can't
+      // request an absurd window; falsy → connector default.
+      const rawHours = Number(body?.lookbackHours);
+      const lookbackHours = Number.isFinite(rawHours) && rawHours > 0 ? Math.min(rawHours, 8760) : null;
       try {
-        const r = await runTriageFn(body?.account || null);
+        const r = await runTriageFn(body?.account || null, lookbackHours);
         if (onTriage) await onTriage();
         return send(res, 200, { ok: true, ...r });
       } catch (err) { return send(res, 200, { ok: false, error: err.message }); }

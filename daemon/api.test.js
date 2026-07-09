@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 
-let server, base, dir, store, acks, triaged, reticked;
+let server, base, dir, store, acks, triaged, reticked, lastTriageArgs;
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "officeos-api-"));
@@ -30,7 +30,7 @@ before(async () => {
   const killed = [];
   const killlistFn = async (account, sender) => { killed.push({ account, sender }); return sender.includes("vip") ? { added: false, reason: "protected sender" } : { added: true, value: sender }; };
   triaged = 0; reticked = 0;
-  const runTriageFn = async () => { triaged++; return { ok: true }; };
+  const runTriageFn = async (account, lookbackHours) => { triaged++; lastTriageArgs = { account, lookbackHours }; return { ok: true }; };
   const onTriage = async () => { reticked++; };
   const restoreFn = async (account, ids) => ({ restored: ids.length, failed: 0 });
   const killlistRemoveFn = async (account, sender) => (sender.includes("nope") ? { removed: false, reason: "not on the kill-list" } : { removed: true });
@@ -170,6 +170,15 @@ describe("POST /actions/triage", () => {
     assert.equal(body.ok, true);
     assert.equal(triaged, before + 1);
     assert.ok(reticked >= 1);
+    assert.equal(lastTriageArgs.lookbackHours, null); // no override → connector default
+  });
+  it("passes a clamped lookbackHours override through to the connector", async () => {
+    await (await fetch(`${base}/actions/triage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lookbackHours: 240 }) })).json();
+    assert.equal(lastTriageArgs.lookbackHours, 240);
+    await (await fetch(`${base}/actions/triage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lookbackHours: 99999 }) })).json();
+    assert.equal(lastTriageArgs.lookbackHours, 8760); // clamped to 1 year
+    await (await fetch(`${base}/actions/triage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lookbackHours: -5 }) })).json();
+    assert.equal(lastTriageArgs.lookbackHours, null); // invalid → default
   });
 });
 

@@ -228,6 +228,14 @@ export function renderUndoBar(undo) {
     + `<button class="undo" data-undo>Undo</button></div>`;
 }
 
-export function renderRunTriage(running) {
-  return `<button class="runtriage" data-run-triage ${running ? "disabled" : ""}>${running ? "Running triage…" : "Run triage"}</button>`;
+export function renderRunTriage(running, triage = {}) {
+  const custom = triage.mode === "custom";
+  const days = triage.days ?? 10;
+  const btn = `<button class="runtriage" data-run-triage ${running ? "disabled" : ""}>${running ? "Running triage…" : "Run triage"}</button>`;
+  const win = `<span class="triagewin">`
+    + `<label><input type="radio" name="triagewin" data-triage-mode="default"${custom ? "" : " checked"}> default</label>`
+    + `<label><input type="radio" name="triagewin" data-triage-mode="custom"${custom ? " checked" : ""}> last `
+    + `<input type="number" id="triagedays" class="triagedays" min="1" max="365" value="${esc(days)}"${custom ? "" : " disabled"}> days</label>`
+    + `</span>`;
+  return btn + win;
 }

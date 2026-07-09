@@ -9,7 +9,7 @@
  *   node scripts/triage.js personal                 # single account
  *   node scripts/triage.js healthcarema,brickellpay  # specific accounts
  *   node scripts/triage.js personal 48              # 48-hour window
- *   node scripts/triage.js all 48 200               # all accounts, 48h, max 200 gmail msgs
+ *   node scripts/triage.js all 240 300              # all accounts, 10 days, max 300 msgs/account
  *
  * Output: Formatted markdown triage report to stdout.
  * Side effect: Writes data/pending-deletions.json for deletion workflow.
@@ -48,22 +48,31 @@ function loadConfig() {
 // Fetch: Outlook
 // ---------------------------------------------------------------------------
 
-async function fetchOutlook(accountId, hours) {
+async function fetchOutlook(accountId, hours, max = 200) {
   const email = process.env[`${accountId.toUpperCase()}_EMAIL`];
   if (!email) throw new Error(`Missing ${accountId.toUpperCase()}_EMAIL in .env`);
 
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
   const client = await buildGraphClient(accountId);
 
-  const response = await client
+  // Paginate: Graph caps a page at 1000; follow @odata.nextLink until we have
+  // `max` messages or run out. Without this a long window would only see the
+  // most-recent page and silently undercount.
+  const collected = [];
+  let response = await client
     .api(`/users/${email}/mailFolders/inbox/messages`)
     .filter(`receivedDateTime ge ${since}`)
     .select("id,subject,from,receivedDateTime,isRead,bodyPreview,importance,hasAttachments,internetMessageHeaders")
     .orderby("receivedDateTime desc")
-    .top(50)
+    .top(Math.min(max, 1000))
     .get();
+  collected.push(...(response.value || []));
+  while (response["@odata.nextLink"] && collected.length < max) {
+    response = await client.api(response["@odata.nextLink"]).get();
+    collected.push(...(response.value || []));
+  }
 
-  return (response.value || []).map((msg) => {
+  return collected.slice(0, max).map((msg) => {
     const inetHeaders = msg.internetMessageHeaders || [];
     const getInetHeader = (name) =>
       inetHeaders.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
@@ -142,11 +151,11 @@ async function fetchGmail(hours, maxResults) {
 // Fetch dispatcher
 // ---------------------------------------------------------------------------
 
-async function fetchAccount(account, hours, maxGmail) {
+async function fetchAccount(account, hours, maxResults) {
   if (account.provider === "gmail") {
-    return fetchGmail(hours, maxGmail);
+    return fetchGmail(hours, maxResults);
   }
-  return fetchOutlook(account.id, hours);
+  return fetchOutlook(account.id, hours, maxResults);
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +404,7 @@ async function main() {
   const args = process.argv.slice(2).filter(a => a !== "--raw");
   const accountFilter = args[0] || "all";
   const hours = parseInt(args[1] || "24", 10);
-  const maxGmail = parseInt(args[2] || "100", 10);
+  const maxResults = parseInt(args[2] || "200", 10);
 
   const { companies, accountTypes, prefs } = loadConfig();
 
@@ -419,7 +428,7 @@ async function main() {
   for (const account of accounts) {
     const label = account.name;
     try {
-      const emails = await fetchAccount(account, hours, maxGmail);
+      const emails = await fetchAccount(account, hours, maxResults);
       const classified = classify(emails, account.id);
       results.push({
         accountId: account.id,
