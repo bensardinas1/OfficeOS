@@ -299,6 +299,7 @@ describe("acted state + delete-and-kill", () => {
     assert.match(html, /class="card[^"]*acted/);
     assert.match(html, /Deleted/);
     assert.doesNotMatch(html, /data-undo-acted=/, "synthesized tile must not render a tile-level Undo");
+    assert.match(html, /data-detail="/, "synthesized tile must keep Details (route to the per-row Undos)");
   });
   it("does not derive tile acted state when only some members are acted", () => {
     const gw2 = {

@@ -110,10 +110,11 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const subline = (item.subtitle != null && item.subtitle !== "") ? esc(item.subtitle) : senderSub;
 
   // A synthesized tile entry has no ui.acted[item.id] for the tile Undo to hit —
-  // omit the tile-level Undo; the detail-pane rows carry their own working Undo.
-  const undoBtn = acted?.synthesized ? "" : `<button class="undo" data-undo-acted="${esc(item.id)}">Undo</button>`;
+  // keep the Details button instead so the detail pane (whose rows carry their
+  // own working per-row Undo) stays reachable after a reload.
+  const actedAction = acted?.synthesized ? detailBtn : `<button class="undo" data-undo-acted="${esc(item.id)}">Undo</button>`;
   const actions = acted
-    ? `<span class="actedtag">${esc(actedBadge(acted))}</span>${undoBtn}`
+    ? `<span class="actedtag">${esc(actedBadge(acted))}</span>${actedAction}`
     : `${approveBtn}${routeBtn}${ackBtn}${detailBtn}${delBtn}${killBtn}${delkillBtn}${dismissBtn}`;
 
   return `<div class="card ${esc(item.status)}${acted ? " acted" : ""}" data-item="${esc(item.id)}">`
