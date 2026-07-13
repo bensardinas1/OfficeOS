@@ -2,8 +2,9 @@
  * api.js — localhost REST + SSE for the daemon. Binds 127.0.0.1 only.
  *
  * Routes:
- *   GET  /health                     -> { ok, lastTickAt }
+ *   GET  /health                     -> { ok, lastTickAt, pid, startedAt }
  *   GET  /model                      -> { ...model, proposals }
+ *   GET  /actions?days=7             -> { acted: <derived map>, entries: [...] } from the action audit log
  *   GET  /events                     -> SSE stream; emits "update" on tick diffs
  *   POST /proposals/:id/approve      -> transition->approved, run executor, ->executed/failed
  *   POST /proposals/:id/dismiss      -> transition->dismissed
@@ -195,11 +196,11 @@ export function createApiServer(deps) {
       try {
         const r = await runTriageFn(body?.account || null, lookbackHours);
         if (onTriage) await onTriage();
-        actionLog?.append({ action: "triage", account: body?.account || null, result: { ok: true, lookbackHours } });
-        return send(res, 200, { ok: true, ...r });
+        const entry = actionLog?.append({ action: "triage", account: body?.account || null, result: { ok: true, lookbackHours } });
+        return send(res, 200, { ok: true, ...r, entryId: entry?.id });
       } catch (err) {
-        actionLog?.append({ action: "triage", account: body?.account || null, result: { error: err.message } });
-        return send(res, 200, { ok: false, error: err.message });
+        const entry = actionLog?.append({ action: "triage", account: body?.account || null, result: { error: err.message } });
+        return send(res, 200, { ok: false, error: err.message, entryId: entry?.id });
       }
     }
     if (req.method === "POST" && path === "/messages/restore") {

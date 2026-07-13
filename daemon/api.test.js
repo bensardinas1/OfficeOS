@@ -243,6 +243,14 @@ describe("action audit log", () => {
     assert.equal(res.acted.u1, undefined);
   });
 
+  it("triage appends an entry and returns its entryId", async () => {
+    const body = await (await fetch(`${base}/actions/triage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell" }) })).json();
+    assert.ok(body.entryId);
+    const e = actionLog.recent().find(en => en.id === body.entryId);
+    assert.equal(e.action, "triage");
+    assert.equal(e.result.ok, true);
+  });
+
   it("health includes pid and startedAt", async () => {
     const h = await (await fetch(`${base}/health`)).json();
     assert.equal(typeof h.pid, "number");
