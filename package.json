@@ -10,7 +10,8 @@
     "daemon": "node daemon/daemon.js",
     "daemon:once": "node daemon/daemon.js --once",
     "seed-demo": "node daemon/seed-demo.js",
-    "test": "node --test \"scripts/test/**/*.test.js\" \"daemon/**/*.test.js\""
+    "test": "node --test \"scripts/test/**/*.test.js\" \"daemon/**/*.test.js\"",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@azure/msal-node": "^2.16.0",
@@ -19,5 +20,8 @@
     "dotenv": "^16.4.5",
     "googleapis": "^171.4.0",
     "js-yaml": "^4.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
   }
 }
