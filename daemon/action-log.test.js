@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, appendFileSync, rmSync } from "node:fs";
+import { mkdtempSync, appendFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createActionLog, deriveActed } from "./action-log.js";
@@ -37,6 +37,20 @@ describe("createActionLog", () => {
   it("recent() returns [] when the file is missing", () => {
     const dir = tmp();
     assert.deepEqual(createActionLog(dir).recent(), []);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("append() never throws on an unwritable path and marks the entry persisted:false", () => {
+    const dir = tmp();
+    const blocked = join(dir, "blocked");
+    writeFileSync(blocked, "not a directory", "utf-8");
+    const log = createActionLog(join(blocked, "sub"));
+    let e;
+    assert.doesNotThrow(() => { e = log.append({ action: "delete", account: "b", emailIds: ["x"], result: { trashed: 1 } }); });
+    assert.equal(e.persisted, false);
+    assert.ok(e.id);
+    const ok = createActionLog(dir).append({ action: "delete", account: "b", emailIds: ["y"], result: { trashed: 1 } });
+    assert.equal("persisted" in ok, false);
     rmSync(dir, { recursive: true, force: true });
   });
 });

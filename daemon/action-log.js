@@ -15,7 +15,12 @@ export function createActionLog(dataDir, clock = { now: () => new Date().toISOSt
   return {
     append(entry) {
       const full = { id: `${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`, at: clock.now(), ...entry };
-      try { appendFileSync(path, JSON.stringify(full) + "\n", "utf-8"); } catch {}
+      try {
+        appendFileSync(path, JSON.stringify(full) + "\n", "utf-8");
+      } catch (err) {
+        process.stderr.write(`action-log append failed: ${err.message}\n`);
+        full.persisted = false;
+      }
       return full;
     },
     recent({ days = 7 } = {}) {
