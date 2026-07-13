@@ -21,3 +21,8 @@ export function buildCtxFor(accounts, makeSaveDraftFn) {
     return { account, saveDraftFn: makeSaveDraftFn(account) };
   };
 }
+
+/** Fake connectors are opt-in ONLY via env — never default (e2e uses them). */
+export function chooseConnectors(env, real, fake) {
+  return env.OFFICEOS_FAKE_CONNECTORS === "1" ? fake : real;
+}

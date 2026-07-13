@@ -14,17 +14,20 @@ import { createStore } from "./store.js";
 import { createAckStore } from "./acknowledge.js";
 import { createApiServer } from "./api.js";
 import { runTick } from "./scheduler.js";
-import { buildCtxFor, resolvePollMs } from "./wiring.js";
+import { buildCtxFor, resolvePollMs, chooseConnectors } from "./wiring.js";
 import { notify } from "./notifier.js";
 import { makeReasonerFn } from "./claude-reasoner.js";
+import { createLogger } from "./log.js";
+import { createActionLog } from "./action-log.js";
+import { makeFakeConnectors } from "./fake-connectors.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_PORT = 8138;
 const DEFAULT_POLL_MINUTES = 15;
 
-function loadConfig() {
-  const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
-  const accountTypes = JSON.parse(readFileSync(join(root, "config/account-types.json"), "utf-8"));
+function loadConfig(configDir) {
+  const companies = JSON.parse(readFileSync(join(configDir, "companies.json"), "utf-8"));
+  const accountTypes = JSON.parse(readFileSync(join(configDir, "account-types.json"), "utf-8"));
   return { companies, accountTypes };
 }
 
@@ -52,8 +55,7 @@ function runProcess(cmd, args, { input = null, timeoutMs = 0, maxBuffer = 50 * 1
   });
 }
 
-async function fetchSubprocess(accountId, folder, hours) {
-  const { companies } = loadConfig();
+async function fetchSubprocess(companies, accountId, folder, hours) {
   const account = companies.companies.find(c => c.id === accountId);
   const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
   const base = [join(root, "scripts", script), accountId, String(hours), folder];
@@ -88,8 +90,7 @@ async function fetchBody(accountId, emailId) {
   return JSON.parse(r.stdout);
 }
 
-function makeDeleteFn() {
-  const { companies } = loadConfig();
+function makeDeleteFn(companies) {
   // Chunk ids so argv never overflows on Windows (~8k char limit); sum results.
   return async (accountId, ids) => {
     const account = companies.companies.find(c => c.id === accountId);
@@ -113,8 +114,7 @@ async function killlistFn(accountId, sender) {
   return JSON.parse(r.stdout);
 }
 
-function makeRestoreFn() {
-  const { companies } = loadConfig();
+function makeRestoreFn(companies) {
   return async (accountId, ids) => {
     const account = companies.companies.find(c => c.id === accountId);
     const script = account?.provider === "gmail" ? "restore-gmail-emails.js" : "restore-emails.js";
@@ -137,8 +137,8 @@ async function killlistRemoveFn(accountId, sender) {
   return JSON.parse(r.stdout);
 }
 
-function getPendingDeletions() {
-  try { return JSON.parse(readFileSync(join(root, "data/pending-deletions.json"), "utf-8")); }
+function getPendingDeletions(dataDir) {
+  try { return JSON.parse(readFileSync(join(dataDir, "pending-deletions.json"), "utf-8")); }
   catch { return null; }
 }
 
@@ -154,47 +154,92 @@ async function main() {
   const args = process.argv.slice(2);
   const port = args.includes("--port") ? Number(args[args.indexOf("--port") + 1]) : DEFAULT_PORT;
   const once = args.includes("--once");
+  const dataDir = args.includes("--data-dir") ? args[args.indexOf("--data-dir") + 1] : join(root, "data");
+  const configDir = args.includes("--config-dir") ? args[args.indexOf("--config-dir") + 1] : join(root, "config");
 
-  const { companies, accountTypes } = loadConfig();
-  const store = createStore(join(root, "data"));
-  const ackStore = createAckStore(join(root, "data"));
+  const logger = createLogger(dataDir);
+  const startedAt = new Date().toISOString();
+  process.on("uncaughtException", (err) => { logger.log("error", "fatal", { stack: String(err.stack || err) }); process.exit(1); });
+  process.on("unhandledRejection", (err) => { logger.log("error", "fatal", { stack: String(err?.stack || err) }); process.exit(1); });
+  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { logger.log("info", "shutdown", { signal: sig }); process.exit(0); });
+
+  let companies, accountTypes;
+  try {
+    ({ companies, accountTypes } = loadConfig(configDir));
+  } catch (err) {
+    logger.log("error", "fatal", { stack: String(err.stack || err) });
+    process.exit(1);
+    return;
+  }
+
+  const store = createStore(dataDir);
+  const ackStore = createAckStore(dataDir);
+  const actionLog = createActionLog(dataDir);
   let lastTickAt = null;
 
   const { classify } = await import("../scripts/classify-emails.js");
+
+  const real = {
+    deleteFn: makeDeleteFn(companies), restoreFn: makeRestoreFn(companies),
+    killlistFn, killlistRemoveFn, runTriageFn, fetchBodyFn: fetchBody,
+    fetchFn: (accountId, folder, hours) => fetchSubprocess(companies, accountId, folder, hours),
+  };
+  const conn = chooseConnectors(process.env, real, makeFakeConnectors());
+
   const deps = (emit) => ({
     accounts: companies.companies,
     typeConfigs: accountTypes,
     store,
-    fetchFn: async (accountId, folder, hours) => fetchSubprocess(accountId, folder, hours),
+    fetchFn: conn.fetchFn,
     classifyFn: (emails, account) => classify(emails, account.id),
     clock: { now: new Date().toISOString() },
     emit,
     reasonerFn: makeReasonerFn(runClaude),
     getAcks: () => ackStore.getAcks(),
-    getPendingDeletions,
+    getPendingDeletions: () => getPendingDeletions(dataDir),
   });
 
   if (once) {
-    const summary = await runTick(deps(() => {}));
-    process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+    const t0 = Date.now();
+    try {
+      const summary = await runTick(deps(() => {}));
+      logger.log("info", "tick-end", { ms: Date.now() - t0, items: summary.itemCount, changed: summary.changed, warnings: summary.warnings });
+      process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+    } catch (err) {
+      logger.log("error", "tick-error", { stack: String(err.stack || err) });
+      throw err;
+    }
     return;
   }
 
   const ctxFor = buildCtxFor(companies.companies, makeSaveDraftFn);
-  const server = createApiServer({ store, ctxFor, getLastTickAt: () => lastTickAt, ackStore, clock: { now: () => new Date().toISOString() }, accounts: companies.companies, fetchBodyFn: fetchBody, deleteFn: makeDeleteFn(), killlistFn, runTriageFn, onTriage: () => tick(), restoreFn: makeRestoreFn(), killlistRemoveFn });
+  const server = createApiServer({
+    store, ctxFor, getLastTickAt: () => lastTickAt, ackStore,
+    clock: { now: () => new Date().toISOString() }, accounts: companies.companies,
+    fetchBodyFn: conn.fetchBodyFn, deleteFn: conn.deleteFn, killlistFn: conn.killlistFn,
+    runTriageFn: conn.runTriageFn, onTriage: () => tick(), restoreFn: conn.restoreFn,
+    killlistRemoveFn: conn.killlistRemoveFn, actionLog, startedAt,
+  });
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") { logger.log("info", "already-running", { port }); process.exit(0); }
+    logger.log("error", "fatal", { stack: String(err.stack || err) }); process.exit(1);
+  });
   server.listen(port, "127.0.0.1", () => {
-    process.stdout.write(JSON.stringify({ type: "daemon-started", url: `http://localhost:${port}`, panel: `http://localhost:${port}/` }) + "\n");
+    logger.log("info", "daemon-started", { pid: process.pid, port });
   });
 
   async function tick() {
+    const t0 = Date.now();
     try {
-      await runTick(deps((e) => {
+      const summary = await runTick(deps((e) => {
         server.broadcastUpdate(e);
-        if (e?.notify) notify(e.notify); // fire-and-forget; never throws
+        if (e?.notify && process.env.OFFICEOS_FAKE_CONNECTORS !== "1") notify(e.notify); // fire-and-forget; never throws; suppressed in fake mode
       }));
       lastTickAt = new Date().toISOString();
+      logger.log("info", "tick-end", { ms: Date.now() - t0, items: summary.itemCount, changed: summary.changed, warnings: summary.warnings });
     } catch (err) {
-      process.stderr.write(`tick error: ${err.message}\n`);
+      logger.log("error", "tick-error", { stack: String(err.stack || err) });
     }
   }
   await tick(); // immediate first tick
