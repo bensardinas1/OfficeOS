@@ -1,15 +1,28 @@
 import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 8993;
-const BASE = `http://127.0.0.1:${PORT}`;
 
-let daemon, dir;
+let daemon, dir, port, base;
+
+// OS-assigned ephemeral port. A hardcoded port would let a daemon orphaned by
+// an aborted earlier run win the bind — our daemon exits 0 on EADDRINUSE, so
+// the health check could then pass against the STALE process (wrong data dir).
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+    srv.on("error", reject);
+  });
+}
 
 function seed(dataDir) {
   const now = new Date().toISOString();
@@ -42,7 +55,9 @@ test.beforeAll(async () => {
     business: { jobTypes: { handled: {} } },
   }), "utf-8");
   seed(dataDir);
-  daemon = spawn("node", [join(root, "daemon", "daemon.js"), "--port", String(PORT), "--data-dir", dataDir, "--config-dir", configDir],
+  port = await freePort();
+  base = `http://127.0.0.1:${port}`;
+  daemon = spawn("node", [join(root, "daemon", "daemon.js"), "--port", String(port), "--data-dir", dataDir, "--config-dir", configDir],
     { env: { ...process.env, OFFICEOS_FAKE_CONNECTORS: "1" }, windowsHide: true });
   // Wait for /health AND for the immediate first tick to finish (lastTickAt set).
   // The daemon runs one tick at startup regardless of pollMinutes; that tick can
@@ -52,8 +67,16 @@ test.beforeAll(async () => {
   // for the rest of the test.
   for (let i = 0; i < 50; i++) {
     try {
-      const r = await fetch(`${BASE}/health`);
-      if (r.ok) { const j = await r.json(); if (j.lastTickAt) return; }
+      const r = await fetch(`${base}/health`);
+      if (r.ok) {
+        const j = await r.json();
+        if (j.lastTickAt) {
+          // Stale-instance guard: prove we're talking to the child we spawned,
+          // not some other daemon that happened to own the port.
+          expect(j.pid).toBe(daemon.pid);
+          return;
+        }
+      }
     } catch {}
     await new Promise(r => setTimeout(r, 200));
   }
@@ -66,7 +89,7 @@ test.afterAll(() => {
 });
 
 test("delete → working → acted → undo → survives reload", async ({ page }) => {
-  await page.goto(BASE);
+  await page.goto(base);
   await expect(page.locator(".sechdr .seclabel")).toContainText("Brickell");
 
   // Open details, scroll the pane, arm a per-cluster delete.
