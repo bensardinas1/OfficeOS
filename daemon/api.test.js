@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 
-let server, base, dir, store, acks, triaged, reticked, lastTriageArgs;
+let server, base, dir, store, acks, triaged, reticked, lastTriageArgs, actionLog;
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "officeos-api-"));
@@ -34,8 +34,11 @@ before(async () => {
   const onTriage = async () => { reticked++; };
   const restoreFn = async (account, ids) => ({ restored: ids.length, failed: 0 });
   const killlistRemoveFn = async (account, sender) => (sender.includes("nope") ? { removed: false, reason: "not on the kill-list" } : { removed: true });
+  const { createActionLog } = await import("./action-log.js");
+  actionLog = createActionLog(dir);
   server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" },
-    accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn });
+    accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn,
+    actionLog, startedAt: "2026-07-13T00:00:00.000Z" });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -201,5 +204,48 @@ describe("POST /senders/killlist/remove", () => {
   it("surfaces removed:false when absent", async () => {
     const body = await (await fetch(`${base}/senders/killlist/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "nope@x.com" }) })).json();
     assert.equal(body.removed, false);
+  });
+});
+
+describe("action audit log", () => {
+  it("delete appends an entry and returns its entryId", async () => {
+    const body = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["x1", "x2"] }) })).json();
+    assert.ok(body.entryId);
+    const entries = actionLog.recent();
+    const e = entries.find(en => en.id === body.entryId);
+    assert.equal(e.action, "delete");
+    assert.deepEqual(e.emailIds, ["x1", "x2"]);
+    assert.equal(e.result.trashed, 2);
+  });
+
+  it("killlist records emailIds from the body and stamps undoOf on remove", async () => {
+    const add = await (await fetch(`${base}/senders/killlist`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "promo2@x.com", emailIds: ["k1"] }) })).json();
+    assert.ok(add.entryId);
+    const rm = await (await fetch(`${base}/senders/killlist/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "promo2@x.com", undoOf: add.entryId }) })).json();
+    assert.ok(rm.entryId);
+    const entries = actionLog.recent();
+    assert.equal(entries.find(e => e.id === add.entryId).emailIds[0], "k1");
+    assert.equal(entries.find(e => e.id === rm.entryId).undoOf, add.entryId);
+  });
+
+  it("GET /actions returns the derived acted map", async () => {
+    const del = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["m9"] }) })).json();
+    const res = await (await fetch(`${base}/actions`)).json();
+    assert.equal(res.acted.m9.deleted, true);
+    assert.equal(res.acted.m9.deleteEntryId, del.entryId);
+    assert.ok(Array.isArray(res.entries));
+  });
+
+  it("undo (restore with undoOf) removes the row from the derived map", async () => {
+    const del = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["u1"] }) })).json();
+    await (await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["u1"], undoOf: del.entryId }) })).json();
+    const res = await (await fetch(`${base}/actions`)).json();
+    assert.equal(res.acted.u1, undefined);
+  });
+
+  it("health includes pid and startedAt", async () => {
+    const h = await (await fetch(`${base}/health`)).json();
+    assert.equal(typeof h.pid, "number");
+    assert.equal(h.startedAt, "2026-07-13T00:00:00.000Z");
   });
 });
