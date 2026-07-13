@@ -58,4 +58,8 @@ describe("panel render↔handler contract", () => {
   it("app marks per-member acted for cluster actions", () => {
     assert.match(app, /:cluster:/, "app must recognize cluster tokens");
   });
+  it("app hydrates acted state from /actions and links undos via undoOf", () => {
+    assert.match(app, /fetch\("\/actions"\)/, "app must fetch /actions");
+    assert.match(app, /undoOf/, "app must send undoOf when undoing");
+  });
 });

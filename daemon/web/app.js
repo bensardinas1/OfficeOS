@@ -22,6 +22,10 @@ function restoreDetailScroll() {
 async function load() {
   const model = await (await fetch("/model")).json();
   lastModel = model;
+  try {
+    const a = await (await fetch("/actions")).json();
+    ui.acted = { ...ui.acted, ...(a.acted || {}) };
+  } catch { /* daemon without action log — panel still works */ }
   draw();
 }
 
@@ -137,8 +141,8 @@ appEl.addEventListener("click", (e) => {
     return void (async () => {
       ui.notice = null;
       try {
-        if (a.deleted) { const r = await postJson("/messages/restore", { account: a.account, emailIds: a.emailIds }); if (r.ok === false) throw new Error(r.error); }
-        if (a.killed) { const r = await postJson("/senders/killlist/remove", { account: a.account, sender: a.sender }); if (r.ok === false) throw new Error(r.error); }
+        if (a.deleted) { const r = await postJson("/messages/restore", { account: a.account, emailIds: a.emailIds, ...(a.deleteEntryId ? { undoOf: a.deleteEntryId } : {}) }); if (r.ok === false) throw new Error(r.error); }
+        if (a.killed) { const r = await postJson("/senders/killlist/remove", { account: a.account, sender: a.sender, ...(a.killEntryId ? { undoOf: a.killEntryId } : {}) }); if (r.ok === false) throw new Error(r.error); }
         delete ui.acted[key]; ui.notice = "Undone"; await load();
       } catch (err) { ui.notice = `Undo failed: ${err.message}`; draw(); }
     })();
@@ -147,13 +151,13 @@ appEl.addEventListener("click", (e) => {
   if (del) {
     const token = del.dataset.token, account = del.dataset.delete, ids = (del.dataset.ids || "").split(",").filter(Boolean);
     const key = token.split(":").slice(2).join(":");
-    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); if (r.ok !== false) markActed(token, key, ids, { deleted: true, account, emailIds: ids }); ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/messages/delete", { account, emailIds: ids }); if (r.ok !== false) markActed(token, key, ids, { deleted: true, account, emailIds: ids, deleteEntryId: r.entryId }); ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash`; await load(); });
   }
   const kill = e.target.closest("[data-killlist]");
   if (kill) {
     const token = kill.dataset.token, account = kill.dataset.killlist, sender = kill.dataset.sender, ids = (kill.dataset.ids || "").split(",").filter(Boolean);
     const key = token.split(":").slice(2).join(":");
-    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender }); if (r.added) markActed(token, key, ids, { killed: true, account, sender }); ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
+    return void confirmThen(token, async () => { ui.undo = null; ui.notice = null; const r = await postJson("/senders/killlist", { account, sender, emailIds: ids }); if (r.added) markActed(token, key, ids, { killed: true, account, sender, killEntryId: r.entryId }); ui.notice = r.added ? `Kill-listed ${sender}` : `Not kill-listed: ${r.reason || r.error}`; await load(); });
   }
   const dk = e.target.closest("[data-delkill]");
   if (dk) {
@@ -162,9 +166,9 @@ appEl.addEventListener("click", (e) => {
     return void confirmThen(token, async () => {
       ui.undo = null; ui.notice = null;
       const dr = await postJson("/messages/delete", { account, emailIds: ids });
-      const kr = await postJson("/senders/killlist", { account, sender });
+      const kr = await postJson("/senders/killlist", { account, sender, emailIds: ids });
       const deleted = dr.ok !== false, killed = !!kr.added;
-      if (deleted || killed) markActed(token, key, ids, { deleted, killed, account, emailIds: ids, sender });
+      if (deleted || killed) markActed(token, key, ids, { deleted, killed, account, emailIds: ids, sender, deleteEntryId: dr.entryId, killEntryId: kr.entryId });
       ui.notice = `Deleted ${dr.trashed ?? 0} · ${kr.added ? "kill-listed" : "kill-list: " + (kr.reason || kr.error)}`;
       await load();
     });
