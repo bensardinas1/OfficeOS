@@ -41,6 +41,9 @@ yarn-error.log
 *.log
 logs/
 
+# Test artifacts
+test-results/
+
 # Temp files
 *.tmp
 *.bak

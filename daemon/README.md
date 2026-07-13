@@ -14,6 +14,30 @@ node daemon/daemon.js --port 9000
 node daemon/daemon.js --once     # run one tick, print summary, exit
 ```
 
+## Always-on (Scheduled Task)
+
+`pwsh scripts/install-daemon-task.ps1 -Start` registers the "OfficeOS Daemon"
+task: starts at your logon, restarts every minute on failure, never expires.
+`-Uninstall` removes it. A second instance exits immediately (port guard), so
+restart loops are safe. Flags: `--data-dir` / `--config-dir` override the
+default `data/` + `config/` (used by e2e).
+
+## Logs
+
+- `data/daemon.log` — operational JSONL: daemon-started, tick-end {ms, items,
+  changed, warnings}, tick-error, fatal, shutdown, already-running. Rotates to
+  `.1` at startup past 5 MB.
+- `data/actions.jsonl` — append-only audit of every mutating action (delete /
+  restore / killlist add+remove / triage) with results. Undo appends a reversing
+  entry (undoOf) — nothing is rewritten. `GET /actions` serves the derived
+  acted map; the panel's dim/strike + Undo state survives reloads and restarts.
+
+## E2E smoke
+
+`npm run test:e2e` (Playwright, devDependency) boots a hermetic daemon —
+temp data/config dirs, `OFFICEOS_FAKE_CONNECTORS=1` (canned connector results;
+never the default) — and walks delete → confirm → acted → undo → reload.
+
 ## API (binds 127.0.0.1 only)
 
 - `GET  /health` — `{ ok, lastTickAt }`
