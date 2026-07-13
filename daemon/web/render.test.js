@@ -281,6 +281,39 @@ describe("acted state + delete-and-kill", () => {
     assert.match(html, /data-undo-acted="e1"/);
     assert.match(html, /Deleted/);
   });
+  it("derives tile acted state from member rows when every member is acted (post-reload hydration)", () => {
+    const gw2 = {
+      id: "brickell:gateway:nmi:2", account: "brickell", jobType: "gateway", title: "T", status: "at_risk",
+      group: { rootCause: "r", members: [
+        { subject: "s1", emailId: "e1", from: "support@nmi.com", fromName: "NMI" },
+        { subject: "s2", emailId: "e2", from: "support@nmi.com", fromName: "NMI" },
+      ] },
+      display: { primarySender: "NMI", messageCount: 2, latestDate: null, accountLabel: "Brickell Pay" },
+      source: [], proposals: [],
+    };
+    const acted = {
+      e1: { deleted: true, account: "brickell", emailIds: ["e1"], deleteEntryId: "a1" },
+      e2: { deleted: true, account: "brickell", emailIds: ["e2"], deleteEntryId: "a2" },
+    };
+    const html = renderItemCard(gw2, 0, { acted });
+    assert.match(html, /class="card[^"]*acted/);
+    assert.match(html, /Deleted/);
+    assert.doesNotMatch(html, /data-undo-acted=/, "synthesized tile must not render a tile-level Undo");
+  });
+  it("does not derive tile acted state when only some members are acted", () => {
+    const gw2 = {
+      id: "brickell:gateway:nmi:2", account: "brickell", jobType: "gateway", title: "T", status: "at_risk",
+      group: { rootCause: "r", members: [
+        { subject: "s1", emailId: "e1", from: "support@nmi.com", fromName: "NMI" },
+        { subject: "s2", emailId: "e2", from: "support@nmi.com", fromName: "NMI" },
+      ] },
+      display: { primarySender: "NMI", messageCount: 2, latestDate: null, accountLabel: "Brickell Pay" },
+      source: [], proposals: [],
+    };
+    const acted = { e1: { deleted: true, account: "brickell", emailIds: ["e1"], deleteEntryId: "a1" } };
+    const html = renderItemCard(gw2, 0, { acted });
+    assert.doesNotMatch(html, /class="card[^"]*acted/);
+  });
 });
 
 describe("destructive buttons + confirm", () => {

@@ -61,5 +61,6 @@ describe("panel render↔handler contract", () => {
   it("app hydrates acted state from /actions and links undos via undoOf", () => {
     assert.match(app, /fetch\("\/actions"\)/, "app must fetch /actions");
     assert.match(app, /undoOf/, "app must send undoOf when undoing");
+    assert.match(app, /emailIds\?\.\[0\]/, "app must reconcile server-backed keys (discriminator present)");
   });
 });

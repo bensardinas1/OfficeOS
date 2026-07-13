@@ -69,7 +69,18 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const d = item.display || {};
   const confirm = opts.confirm || null;
   const busy = opts.busy || null;
-  const acted = (opts.acted || {})[item.id];
+  const members = item.group?.members || [];
+  // Tile-level acted entries (keyed by item.id) are client-session state; after a
+  // reload the server-hydrated map only has per-emailId entries. Fall back: the
+  // tile is acted when EVERY member emailId has an acted entry, synthesizing the
+  // badge shape from the member rows.
+  let acted = (opts.acted || {})[item.id];
+  if (!acted && members.length) {
+    const rows = members.map(m => (opts.acted || {})[m.emailId]).filter(Boolean);
+    if (rows.length === members.length) {
+      acted = { deleted: rows.every(r => r.deleted), killed: rows.every(r => r.killed), account: item.account, emailIds: members.map(m => m.emailId), synthesized: true };
+    }
+  }
   const pending = (item.proposals || []).find(p => p.state === "pending");
   const routeUrl = safeUrl((item.source || []).find(s => s.kind === "url")?.url);
   const approveBtn = pending
@@ -82,7 +93,6 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
     ? `<button class="ack" data-ack="${esc(item.id)}" data-fp="${esc(item.fingerprint || "")}">Acknowledge</button>` : "";
   const detailBtn = `<button class="detail" data-detail="${esc(item.id)}">Details</button>`;
 
-  const members = item.group?.members || [];
   const ids = members.map(m => m.emailId).filter(Boolean).join(",");
   const senders = [...new Set(members.map(m => m.from).filter(Boolean))];
   const delBtn = ids
@@ -99,8 +109,11 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   ].filter(Boolean).join(" · ");
   const subline = (item.subtitle != null && item.subtitle !== "") ? esc(item.subtitle) : senderSub;
 
+  // A synthesized tile entry has no ui.acted[item.id] for the tile Undo to hit —
+  // omit the tile-level Undo; the detail-pane rows carry their own working Undo.
+  const undoBtn = acted?.synthesized ? "" : `<button class="undo" data-undo-acted="${esc(item.id)}">Undo</button>`;
   const actions = acted
-    ? `<span class="actedtag">${esc(actedBadge(acted))}</span><button class="undo" data-undo-acted="${esc(item.id)}">Undo</button>`
+    ? `<span class="actedtag">${esc(actedBadge(acted))}</span>${undoBtn}`
     : `${approveBtn}${routeBtn}${ackBtn}${detailBtn}${delBtn}${killBtn}${delkillBtn}${dismissBtn}`;
 
   return `<div class="card ${esc(item.status)}${acted ? " acted" : ""}" data-item="${esc(item.id)}">`

@@ -24,7 +24,19 @@ async function load() {
   lastModel = model;
   try {
     const a = await (await fetch("/actions")).json();
-    ui.acted = { ...ui.acted, ...(a.acted || {}) };
+    // Reconcile with server truth rather than merging additively. A server-backed
+    // key (entry-id-carrying, keyed by its own single emailId — the only shape
+    // the server derives) that the server stops reporting was undone in another
+    // tab or aged past the /actions window, so drop it. Tile-level keys (item.id)
+    // never appear in the server map — they're client-session state — so keep them.
+    const server = a.acted || {};
+    const kept = {};
+    for (const [k, v] of Object.entries(ui.acted)) {
+      const serverBacked = (v.deleteEntryId || v.killEntryId) && k === v.emailIds?.[0];
+      if (serverBacked && !server[k]) continue; // undone elsewhere or aged out — drop
+      kept[k] = v;
+    }
+    ui.acted = { ...kept, ...server };
   } catch { /* daemon without action log — panel still works */ }
   draw();
 }
