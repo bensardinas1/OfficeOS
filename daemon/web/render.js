@@ -2,6 +2,8 @@
  * render.js — pure HTML-string builders for the panel. No DOM, no node APIs.
  * app.js injects these strings and wires events via data- attributes.
  */
+import { groupHandledMembers } from "./view-model.js";
+
 export function esc(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -168,34 +170,64 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
         : `<button class="showbody" data-loadbody="${esc(m.emailId)}">Show message</button><div class="msgbody" data-body-for="${esc(m.emailId)}" hidden></div>`)
     : "";
 
+  // Per-message row builder shared by both the clustered and flat-when-not-clustered
+  // branches below. `withWho` prepends sender attribution — used for Conversations
+  // rows, where (unlike sender clusters) the row itself doesn't imply who sent it.
+  const msgRow = (m, { withWho = false } = {}) => {
+    const ma = acted[m.emailId];
+    const when = relativeTime(m.receivedAt, nowMs);
+    const tag = ma ? `<div class="msgactions"><span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button></div>` : "";
+    const who = withWho ? `${esc(m.fromName || m.from || "")} · ` : "";
+    return `<div class="msg${ma ? " acted" : ""}"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
+      + `<div class="msgmeta">${who}${esc(when)}</div>${tag}${bodyRegionFor(m)}</div>`;
+  };
+
+  // Renders a list of {from, label, members} sender clusters (today's per-sender
+  // bulk-action block), each row sorted newest-first. Shared by the triage-only
+  // path and the handled tile's "Bulk senders" section.
+  const senderClusterHtml = (grpList) => grpList.map(grp => {
+    const ids = grp.members.map(m => m.emailId).filter(Boolean).join(",");
+    const senderKey = (grp.from || "unknown").replace(/[^a-z0-9._@-]/gi, "_");
+    const delAll = confirmBtn({ cls: "del", attr: "data-delete-sender", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delall:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, busy, disabled: !grp.from });
+    const killAll = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `kill:cluster:${item.account}:${senderKey}`, verb: "kill list", confirm, busy, disabled: !grp.from });
+    const dkAll = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delkill:cluster:${item.account}:${senderKey}`, verb: "Delete and Kill", confirm, busy, disabled: !ids || !grp.from });
+    const sortedRows = grp.members.slice().sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
+    const rowsHtml = sortedRows.map(m => msgRow(m)).join("");
+    return `<div class="sendergrp"><div class="sghdr">`
+      + `<label class="sgsel"><input type="checkbox" data-select="cluster:${esc(item.account)}:${esc(grp.from || "")}"></label>`
+      + `<span class="sgname">${esc(grp.label)} (${grp.members.length})</span>`
+      + `<span class="sgactions">${delAll}${killAll}${dkAll}</span></div>${rowsHtml}</div>`;
+  }).join("");
+
   let msgs;
   if (clustered) {
     // Group from original member order so ids are stable/predictable; then sort rows newest-first within each group.
-    const groups = new Map();
-    for (const m of rawMembers) {
-      const from = (m.from || "").toLowerCase();
-      const key = from || "__unknown__";
-      if (!groups.has(key)) groups.set(key, { from, label: m.fromName || m.from || "(unknown sender)", members: [] });
-      groups.get(key).members.push(m);
-    }
-    const ordered = [...groups.values()].sort((a, b) => b.members.length - a.members.length);
-    msgs = ordered.map(grp => {
-      const ids = grp.members.map(m => m.emailId).filter(Boolean).join(",");
-      const senderKey = (grp.from || "unknown").replace(/[^a-z0-9._@-]/gi, "_");
-      const delAll = confirmBtn({ cls: "del", attr: "data-delete-sender", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delall:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, busy, disabled: !grp.from });
-      const killAll = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `kill:cluster:${item.account}:${senderKey}`, verb: "kill list", confirm, busy, disabled: !grp.from });
-      const dkAll = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delkill:cluster:${item.account}:${senderKey}`, verb: "Delete and Kill", confirm, busy, disabled: !ids || !grp.from });
-      const sortedRows = grp.members.slice().sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
-      const rowsHtml = sortedRows.map(m => {
-        const ma = acted[m.emailId];
-        const when = relativeTime(m.receivedAt, nowMs);
-        const tag = ma ? `<div class="msgactions"><span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button></div>` : "";
-        return `<div class="msg${ma ? " acted" : ""}"><div class="msgsub">${esc(m.subject || "(no subject)")}</div>`
-          + `<div class="msgmeta">${esc(when)}</div>${tag}${bodyRegionFor(m)}</div>`;
+    const buildSenderGroups = (list) => {
+      const groups = new Map();
+      for (const m of list) {
+        const from = (m.from || "").toLowerCase();
+        const key = from || "__unknown__";
+        if (!groups.has(key)) groups.set(key, { from, label: m.fromName || m.from || "(unknown sender)", members: [] });
+        groups.get(key).members.push(m);
+      }
+      return [...groups.values()].sort((a, b) => b.members.length - a.members.length);
+    };
+    if (item.jobType === "handled") {
+      const handledGroups = groupHandledMembers(rawMembers);
+      const convHtml = handledGroups.conversations.map(c => {
+        const rows = c.members.map(m => msgRow(m, { withWho: true })).join("");
+        return `<div class="convgrp"><div class="cghdr">`
+          + `<label class="cgsel"><input type="checkbox" data-select="conv:${esc(item.account)}:${esc(c.key)}"></label>`
+          + `<span class="cgname">${esc(c.label)}</span>`
+          + `<span class="cgmeta">${c.members.length} message${c.members.length === 1 ? "" : "s"} · ${c.senderCount} sender${c.senderCount === 1 ? "" : "s"}</span>`
+          + `</div>${rows}</div>`;
       }).join("");
-      return `<div class="sendergrp"><div class="sghdr"><span class="sgname">${esc(grp.label)} (${grp.members.length})</span>`
-        + `<span class="sgactions">${delAll}${killAll}${dkAll}</span></div>${rowsHtml}</div>`;
-    }).join("");
+      const senderHtml = senderClusterHtml(handledGroups.senders);
+      msgs = `${convHtml ? `<div class="dsec-h">Conversations</div>${convHtml}` : ""}`
+        + `${senderHtml ? `<div class="dsec-h">Bulk senders</div>${senderHtml}` : ""}`;
+    } else {
+      msgs = senderClusterHtml(buildSenderGroups(rawMembers));
+    }
   } else {
     msgs = members.map(m => {
       const who = m.fromName || m.from || m.vendor || "";

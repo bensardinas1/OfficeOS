@@ -376,4 +376,38 @@ describe("sender-clustered detail (handled/triage)", () => {
       group: { rootCause: "r", members: [{ subject: "s", emailId: "e1", from: "support@nmi.com", fromName: "NMI" }] }, display: {}, source: [], proposals: [] };
     assert.match(renderDetailPanel(gw, 0), /del:msg:e1/);
   });
+
+  const convHandled = {
+    id: "brickellpay:handled", account: "brickellpay", jobType: "handled", title: "T", status: "ok",
+    display: { accountLabel: "Brickell Pay" },
+    group: { rootCause: "handled", members: [
+      { subject: "Path Peptides underwriting", from: "luis@brickellpay.com", fromName: "Luis", emailId: "c1", receivedAt: "2026-07-01T00:00:00Z", conversationId: "cv-1", automated: false },
+      { subject: "RE: Path Peptides underwriting", from: "mckenna@partner.com", fromName: "McKenna", emailId: "c2", receivedAt: "2026-07-02T00:00:00Z", conversationId: "cv-1", automated: false },
+      { subject: "New order #1", from: "noise@wp.com", fromName: "WP", emailId: "n1", receivedAt: "2026-07-03T00:00:00Z", conversationId: null, automated: true },
+    ] },
+    source: [], proposals: [],
+  };
+  it("renders handled drill-in as Conversations + Bulk senders with typed checkboxes", () => {
+    const html = renderDetailPanel(convHandled, 0);
+    assert.match(html, /Conversations/);
+    assert.match(html, /Bulk senders/);
+    assert.match(html, /data-select="conv:brickellpay:cv-1"/);
+    assert.match(html, /Path Peptides underwriting/);
+    assert.match(html, /2 messages · 2 senders/);
+    assert.match(html, /data-select="cluster:brickellpay:noise@wp.com"/);
+    // conversation rows keep sender attribution and appear once (not scattered into clusters)
+    assert.doesNotMatch(html, /data-select="cluster:brickellpay:luis@brickellpay.com"/);
+  });
+  it("omits the Conversations section when all members are automated", () => {
+    const noisy = { ...convHandled, group: { ...convHandled.group, members: convHandled.group.members.filter(m => m.automated) } };
+    const html = renderDetailPanel(noisy, 0);
+    assert.doesNotMatch(html, /Conversations/);
+    assert.match(html, /Bulk senders/);
+  });
+  it("triage tiles keep clusters only, now with cluster checkboxes", () => {
+    const tri = { ...convHandled, id: "x:triage", jobType: "triage" };
+    const html = renderDetailPanel(tri, 0);
+    assert.doesNotMatch(html, /Conversations/);
+    assert.match(html, /data-select="cluster:brickellpay:/);
+  });
 });
