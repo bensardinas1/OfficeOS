@@ -69,11 +69,15 @@ thin shims that invoke mail.js functions. The daemon calls mail.js in-process vi
 - `GET  /messages/:id/body?account=<id>` — fetch message body
 - `POST /proposals/:id/approve` — approve + execute (route → URL, draft_chase → drafts)
 - `POST /proposals/:id/dismiss` — dismiss
+- `POST /proposals/:id/reopen` — reopen a dismissed proposal
+- `POST /items/:id/acknowledge?fp=<fingerprint>` — acknowledge a finding/ticket (local state only)
+- `POST /items/:id/unacknowledge` — remove an item's acknowledgement
 - `POST /messages/delete` — soft-delete messages by ID
 - `POST /messages/restore` — restore messages from trash
 - `POST /senders/killlist` — add sender to kill-list (auto-delete future + optionally retroactive)
 - `POST /senders/killlist/remove` — remove sender from kill-list
 - `POST /senders/delete-all` — soft-delete all messages from a sender (bounded by sinceHours)
+- `POST /actions/triage` — run triage now (body `{account?, lookbackHours?}`; lookback clamped 1..8760)
 
 ## Panel
 
