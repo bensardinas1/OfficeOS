@@ -74,9 +74,33 @@ describe("deriveActed", () => {
     assert.equal(acted.e2.killed, undefined);
   });
 
-  it("an undoOf entry neutralizes its target and contributes nothing itself", () => {
-    const undo = { id: "r1", at: "t", action: "restore", account: "b", emailIds: ["e1", "e2"], result: { restored: 2 }, undoOf: "d1" };
-    assert.deepEqual(deriveActed([del, undo]), {});
+  it("a restore undoOf entry neutralizes only the ids it lists (per-row undo)", () => {
+    const undoOne = { id: "r1", at: "t", action: "restore", account: "b", emailIds: ["e1"], result: { restored: 1 }, undoOf: "d1" };
+    const acted = deriveActed([del, undoOne]);
+    assert.equal(acted.e1, undefined);           // undone row gone
+    assert.equal(acted.e2.deleted, true);        // sibling survives
+  });
+
+  it("an undoOf entry with no emailIds neutralizes the whole target (kill undo)", () => {
+    const killUndo = { id: "ku1", at: "t", action: "killlist_remove", account: "b", sender: "spam@x.com", result: { removed: true }, undoOf: "k1" };
+    const acted = deriveActed([del, kill, killUndo]);
+    assert.equal(acted.e1.killed, undefined);
+    assert.equal(acted.e1.deleted, true);        // delete unaffected
+  });
+
+  it("failedIds never contribute; wholly-failed new-shape deletes contribute nothing", () => {
+    const partial = { id: "d3", at: "t", action: "delete", account: "b", emailIds: ["p1", "p2"], result: { trashed: 1, failed: 1, failedIds: ["p2"] } };
+    const whollyFailed = { id: "d4", at: "t", action: "delete", account: "b", emailIds: ["w1"], result: { trashed: 0, failed: 1, failedIds: ["w1"] } };
+    const acted = deriveActed([partial, whollyFailed]);
+    assert.equal(acted.p1.deleted, true);
+    assert.equal(acted.p2, undefined);
+    assert.equal(acted.w1, undefined);
+  });
+
+  it("legacy entries without failedIds keep the old behavior", () => {
+    const legacy = { id: "d5", at: "t", action: "delete", account: "b", emailIds: ["l1"], result: { trashed: 0, failed: 1 } };
+    const acted = deriveActed([legacy]);
+    assert.equal(acted.l1.deleted, true); // legacy shape: can't attribute per-id, keep old semantics
   });
 
   it("failed results and refused kills contribute nothing", () => {

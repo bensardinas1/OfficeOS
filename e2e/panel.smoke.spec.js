@@ -135,15 +135,18 @@ test("delete → working → acted → undo → survives reload", async ({ page 
   await expect(page.locator("aside.detail .msg.acted").first()).toBeVisible();
 
   // undo one member — server-side semantics: a cluster delete creates ONE
-  // action-log entry covering all 12 members, so undoing any one member
-  // clears the acted state for the whole entry (all 12), not just that row.
+  // action-log entry covering all 12 members, but undo accounting is PER-ROW:
+  // each row's server-hydrated acted value carries emailIds: [thatRowId] plus
+  // the shared deleteEntryId, so the undo handler's restore call posts only
+  // that one id (with undoOf: <sharedEntryId>). deriveActed() then neutralizes
+  // just that id, leaving the other 11 members acted.
   const actedBefore = await page.locator("aside.detail .msg.acted").count();
   expect(actedBefore).toBeGreaterThan(0);
   await page.locator('[data-undo-acted]').first().click();
-  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(0);
+  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(actedBefore - 1);
 
   // and the undo also survives a reload
   await page.reload();
   await page.locator("button.detail").first().click();
-  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(0);
+  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(actedBefore - 1);
 });

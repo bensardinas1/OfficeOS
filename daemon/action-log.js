@@ -41,18 +41,43 @@ export function createActionLog(dataDir, clock = { now: () => new Date().toISOSt
   };
 }
 
-/** Pure fold: recent entries (oldest-first) -> the panel's acted map, keyed by emailId. */
+/**
+ * Pure fold: recent entries (oldest-first) -> the panel's acted map, keyed by
+ * emailId. Undo accounting is PER-ID: a restore entry neutralizes only the ids
+ * it lists; an undo entry with no ids (killlist_remove) retires its whole
+ * target. Ids in result.failedIds never contribute; a new-shape delete with
+ * trashed:0 contributes nothing (legacy entries without failedIds keep the old
+ * whole-entry behavior).
+ */
 export function deriveActed(entries) {
-  const undone = new Set(entries.filter(e => e.undoOf).map(e => e.undoOf));
+  // entryId -> "ALL" | Set<emailId>
+  const undone = new Map();
+  for (const e of entries) {
+    if (!e.undoOf) continue;
+    const cur = undone.get(e.undoOf);
+    if (cur === "ALL") continue;
+    if (!Array.isArray(e.emailIds) || e.emailIds.length === 0) { undone.set(e.undoOf, "ALL"); continue; }
+    const set = cur instanceof Set ? cur : new Set();
+    for (const id of e.emailIds) set.add(id);
+    undone.set(e.undoOf, set);
+  }
   const acted = {};
   for (const e of entries) {
-    if (e.undoOf || undone.has(e.id) || e.result?.error) continue;
+    if (e.undoOf || e.result?.error) continue;
+    const u = undone.get(e.id);
+    if (u === "ALL") continue;
+    const failed = new Set(Array.isArray(e.result?.failedIds) ? e.result.failedIds : []);
+    const newShape = Array.isArray(e.result?.failedIds);
     if (e.action === "delete") {
+      if (newShape && e.result?.trashed === 0) continue;
       for (const id of e.emailIds || []) {
+        if (failed.has(id)) continue;
+        if (u instanceof Set && u.has(id)) continue;
         acted[id] = { ...(acted[id] || {}), deleted: true, account: e.account, emailIds: [id], deleteEntryId: e.id };
       }
     } else if (e.action === "killlist_add" && e.result?.added === true) {
       for (const id of e.emailIds || []) {
+        if (u instanceof Set && u.has(id)) continue;
         acted[id] = { ...(acted[id] || {}), killed: true, account: e.account, emailIds: [id], sender: e.sender, killEntryId: e.id };
       }
     }
