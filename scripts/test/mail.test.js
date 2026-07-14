@@ -1,5 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fetchMail, stripHtml, _setClientFactoryForTest, deleteBySender } from "../mail.js";
 
 const outlookAcct = { id: "brickell", provider: "outlook", myEmail: "me@brickell.com" };
@@ -112,6 +113,22 @@ describe("getClient — cache eviction on rejected build", () => {
     assert.equal(calls, 2); // cache was evicted, factory retried
     assert.equal(emails.length, 1);
     assert.equal(emails[0].id, "g1");
+  });
+});
+
+describe("getClient — Gmail account verification rail", () => {
+  // The default client factory must verify the authenticated Gmail session
+  // matches the configured account before ANY operation (fetch/delete/
+  // restore/deleteBySender) can use the client. The live path can't run in
+  // unit tests (it needs real OAuth tokens + config), so — like the
+  // rails-guard suite — we assert the source contract: mail.js must wire
+  // verifyGmailAccount into its Gmail client build. Test-injected factories
+  // (_setClientFactoryForTest) bypass the default factory by design, which is
+  // why every other test in this file is unaffected.
+  it("mail.js wires verifyGmailAccount into the default Gmail client factory", () => {
+    const src = readFileSync(new URL("../mail.js", import.meta.url), "utf-8");
+    assert.match(src, /verifyGmailAccount/, "default Gmail factory must call verifyGmailAccount");
+    assert.match(src, /gmail-verify\.js/, "must import the guard from gmail-verify.js");
   });
 });
 

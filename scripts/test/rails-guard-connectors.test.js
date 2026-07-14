@@ -58,6 +58,7 @@ describe("connector rails guard — mail.js (unified connector) never sends/perm
     const src = read("mail.js");
     assert.match(src, /deleteditems/i, "must move to deleteditems (soft delete)");
     assert.match(src, /isProtectedSender/, "must wire the protected-sender guard");
+    assert.match(src, /verifyGmailAccount/, "must verify the authenticated Gmail session matches the account (client-factory guard)");
     const hits = [...SEND, ...PERM_DELETE, /\bpermanentDelete\b/i].filter(rx => rx.test(src)).map(String);
     assert.deepEqual(hits, [], `mail.js must not reference a send/permanent-delete API: ${hits.join(", ")}`);
   });

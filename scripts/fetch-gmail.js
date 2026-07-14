@@ -1,9 +1,9 @@
 /**
  * fetch-gmail.js <accountId> <hours> <folder>
  *
- * Fetches recent Gmail messages. Thin shim over scripts/mail.js fetchMail;
- * still builds its own Gmail client once, up front, purely to verify the
- * authenticated session matches the configured account before fetching.
+ * Fetches recent Gmail messages. Thin shim over scripts/mail.js fetchMail,
+ * whose Gmail client factory verifies the authenticated session matches the
+ * configured account (verifyGmailAccount) before any operation runs.
  *
  * Args:
  *   accountId — account id from config/companies.json (informational; Gmail client
@@ -20,8 +20,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildGmailClient } from "./gmail-client.js";
-import { verifyGmailAccount } from "./gmail-verify.js";
 import { fetchMail } from "./mail.js";
 import "dotenv/config";
 
@@ -32,9 +30,6 @@ const hours = parseInt(process.argv[3] || "24", 10);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 try {
-  const gmail = await buildGmailClient();
-  await verifyGmailAccount(gmail, accountId);
-
   const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
   const account = companies.companies.find((c) => c.id === accountId) || { id: accountId, provider: "gmail" };
 

@@ -21,7 +21,19 @@ let clientFactory = null; // null → default
 const clientCache = new Map();
 
 function defaultFactory(account) {
-  return (account.provider || "outlook") === "gmail" ? buildGmailClient() : buildGraphClient(account.id);
+  if ((account.provider || "outlook") === "gmail") {
+    // Verify the authenticated Gmail session matches the configured account
+    // BEFORE any operation can use the client — a stale token cache for the
+    // wrong mailbox rejects the cached promise (getClient's eviction handler
+    // clears it) and no fetch/delete/restore/deleteBySender proceeds.
+    // Test-injected factories bypass this on purpose: fakes shouldn't verify.
+    return buildGmailClient().then(async (client) => {
+      const { verifyGmailAccount } = await import("./gmail-verify.js");
+      await verifyGmailAccount(client, account.id);
+      return client;
+    });
+  }
+  return buildGraphClient(account.id);
 }
 
 async function getClient(account) {
