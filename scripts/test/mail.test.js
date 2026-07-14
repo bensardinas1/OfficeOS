@@ -188,6 +188,20 @@ describe("deleteBySender", () => {
     assert.match(r.refused, /correspond/i);
   });
 
+  it("refuses query-injection sender strings before any API call", async () => {
+    _setClientFactoryForTest(async () => { throw new Error("must not build a client"); });
+    for (const evil of [
+      "real@vip.com or from:ceo@brickellpay.com",
+      "a@b.com in:anywhere",
+      'x@y.com" OR "z@w.com',
+      "a@b@c.com",
+      "spaces in@name.com",
+    ]) {
+      const r = await deleteBySender(acct, evil);
+      assert.match(r.refused, /not a valid email/i, `should refuse: ${evil}`);
+    }
+  });
+
   it("outlook: queries inbox by sender within the window, deletes matches, reports ids", async () => {
     process.env.BRICKELL_EMAIL = "me@brickell.com";
     const posted = [];
@@ -216,6 +230,11 @@ describe("deleteBySender", () => {
     const iso = filterSeen.match(/ge (.+)$/)[1];
     const hoursBack = (Date.now() - Date.parse(iso)) / 3600000;
     assert.ok(hoursBack <= 8760 + 1, `window was ${hoursBack}h`);
+
+    await deleteBySender(acct, "noise@z.com", { sinceHours: 0 });
+    const isoZero = filterSeen.match(/ge (.+)$/)[1];
+    const hoursBackZero = (Date.now() - Date.parse(isoZero)) / 3600000;
+    assert.ok(hoursBackZero >= 0.9 && hoursBackZero <= 1.1, `explicit 0 should clamp to ~1h, was ${hoursBackZero}h`);
   });
 
   it("gmail: uses from:+after: query and trashes matches", async () => {

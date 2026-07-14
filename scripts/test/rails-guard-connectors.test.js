@@ -58,14 +58,7 @@ describe("connector rails guard — mail.js (unified connector) never sends/perm
     const src = read("mail.js");
     assert.match(src, /deleteditems/i, "must move to deleteditems (soft delete)");
     assert.match(src, /isProtectedSender/, "must wire the protected-sender guard");
-    const FORBIDDEN = [
-      /\bpermanentDelete\b/i,
-      /\bbatchDelete\b/i,
-      /users\.messages\.delete\(/i,
-      /\bsendMail\b/i,
-      /messages\.send\b/i,
-    ];
-    const hits = FORBIDDEN.filter(rx => rx.test(src)).map(String);
+    const hits = [...SEND, ...PERM_DELETE, /\bpermanentDelete\b/i].filter(rx => rx.test(src)).map(String);
     assert.deepEqual(hits, [], `mail.js must not reference a send/permanent-delete API: ${hits.join(", ")}`);
   });
 });

@@ -223,14 +223,21 @@ export async function fetchMessageBody(account, emailId) {
 // ---------------------------------------------------------------------------
 const MATCH_CAP = 1000;
 
+// Strict single-address shape: rejects whitespace, colons, quotes, angle
+// brackets, parens, and multi-@ strings so no Gmail search operator (or OData
+// fragment) can ride in on the sender string. Validated BEFORE the guards so
+// a crafted string can't confuse isProtectedSender's domain split either.
+const EMAIL_SHAPE = /^[^\s@:'"<>()]+@[^\s@:'"<>()]+\.[^\s@:'"<>()]+$/;
+
 export async function deleteBySender(account, sender, { sinceHours = 720, correspondents } = {}) {
   const email = String(sender || "").trim().toLowerCase();
   const none = { matched: 0, trashed: 0, failed: 0, failedIds: [], emailIds: [] };
-  if (!email || !email.includes("@")) return { ...none, refused: "not a valid email address" };
+  if (!EMAIL_SHAPE.test(email)) return { ...none, refused: "not a valid email address" };
   if (isProtectedSender(account, email)) return { ...none, refused: "protected sender (priority/never-delete/own domain)" };
   if (correspondents && correspondents.has(email)) return { ...none, refused: "you've emailed this sender (correspondent)" };
 
-  const hours = Math.min(Math.max(Number(sinceHours) || 720, 1), 8760);
+  const n = Number(sinceHours);
+  const hours = Math.min(Math.max(Number.isFinite(n) ? n : 720, 1), 8760);
   const client = await getClient(account);
   let ids;
   if ((account.provider || "outlook") === "gmail") {
