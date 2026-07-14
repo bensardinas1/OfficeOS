@@ -1,7 +1,9 @@
 /**
  * fetch-gmail.js <accountId> <hours> <folder>
  *
- * Fetches recent Gmail messages via the Gmail REST API (no MCP).
+ * Fetches recent Gmail messages. Thin shim over scripts/mail.js fetchMail;
+ * still builds its own Gmail client once, up front, purely to verify the
+ * authenticated session matches the configured account before fetching.
  *
  * Args:
  *   accountId — account id from config/companies.json (informational; Gmail client
@@ -15,40 +17,29 @@
  *          toRecipients, ccRecipients, gmailCategories).
  */
 
-import { buildGmailClient, mapGmailMessage } from "./gmail-client.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildGmailClient } from "./gmail-client.js";
 import { verifyGmailAccount } from "./gmail-verify.js";
+import { fetchMail } from "./mail.js";
 import "dotenv/config";
 
 const accountId = process.argv[2] || "personal";
 const hours = parseInt(process.argv[3] || "24", 10);
 // const folder = process.argv[4] || "inbox"; // unused — Gmail uses labels, not folders
 
-const sinceUnixSec = Math.floor(Date.now() / 1000) - hours * 3600;
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 try {
   const gmail = await buildGmailClient();
   await verifyGmailAccount(gmail, accountId);
 
-  // List message IDs in inbox newer than `sinceUnixSec`.
-  const listRes = await gmail.users.messages.list({
-    userId: "me",
-    q: `in:inbox after:${sinceUnixSec}`,
-    maxResults: 100,
-  });
-  const ids = (listRes.data.messages || []).map(m => m.id);
+  const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
+  const account = companies.companies.find((c) => c.id === accountId) || { id: accountId, provider: "gmail" };
 
-  // Fetch metadata in parallel.
-  const messages = await Promise.all(
-    ids.map(async (id) => {
-      const res = await gmail.users.messages.get({
-        userId: "me",
-        id,
-        format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe", "Precedence", "To", "Cc"],
-      });
-      return mapGmailMessage(res.data);
-    })
-  );
+  // Preserve today's 100-message cap.
+  const messages = await fetchMail(account, { hours, max: 100 });
 
   process.stdout.write(JSON.stringify(messages, null, 2));
 } catch (err) {

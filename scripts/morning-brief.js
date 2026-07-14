@@ -415,16 +415,12 @@ if (process.argv[1] && process.argv[1].endsWith("morning-brief.js")) {
   const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
   const accountTypes = JSON.parse(readFileSync(join(root, "config/account-types.json"), "utf-8"));
   const { classify } = await import("./classify-emails.js");
+  const { fetchMail } = await import("./mail.js");
 
-  function fetchSubprocess(accountId, sinceIso) {
+  async function fetchSubprocess(accountId, sinceIso) {
     const account = companies.companies.find(c => c.id === accountId);
-    const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
     const hours = Math.ceil((Date.now() - new Date(sinceIso).getTime()) / 3600000);
-    const child = spawnSync("node", [join(root, "scripts", script), accountId, String(hours), "inbox"], {
-      encoding: "utf-8", maxBuffer: 50 * 1024 * 1024
-    });
-    if (child.status !== 0) throw new Error(child.stderr || `fetch failed for ${accountId}`);
-    return JSON.parse(child.stdout);
+    return fetchMail(account, { hours });
   }
   function deleteSubprocess(accountId, ids) {
     if (ids.length === 0) return { trashed: 0, failed: 0 };

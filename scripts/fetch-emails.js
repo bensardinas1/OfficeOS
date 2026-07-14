@@ -1,6 +1,7 @@
 /**
  * fetch-emails.js
  * Fetches recent emails from a mailbox via Microsoft Graph API.
+ * Thin shim over scripts/mail.js fetchMail.
  *
  * Usage:
  *   node scripts/fetch-emails.js [companyId] [hours] [folder] [top] [bodyChars]
@@ -13,9 +14,10 @@
  * Output: JSON array of email objects printed to stdout.
  */
 
-import { buildGraphClient } from "./graph-client.js";
-import { stripHtml } from "./mail.js";
-import "dotenv/config";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { fetchMail } from "./mail.js";
 
 export { stripHtml } from "./mail.js";
 
@@ -28,62 +30,13 @@ if (process.argv[1] && process.argv[1].endsWith("fetch-emails.js")) {
   const top = parseInt(process.argv[5] || "50", 10);
   const bodyChars = parseInt(process.argv[6] || "0", 10);
 
-  const email = process.env[`${companyId.toUpperCase()}_EMAIL`];
-  if (!email) {
-    console.error(`Missing ${companyId.toUpperCase()}_EMAIL in .env`);
-    process.exit(1);
-  }
-
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
   try {
-    const client = await buildGraphClient(companyId);
+    const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
+    const account = companies.companies.find((c) => c.id === companyId) || { id: companyId, provider: "outlook" };
 
-    // Build the select fields — only include body when bodyChars > 0
-    const selectFields = "id,subject,from,receivedDateTime,isRead,bodyPreview,importance,hasAttachments";
-    const select = bodyChars > 0 ? `${selectFields},body` : selectFields;
-
-    // Paginate to collect up to `top` messages
-    const collected = [];
-    const pageSize = Math.min(top, 1000);
-
-    let response = await client
-      .api(`/users/${email}/mailFolders/${folder}/messages`)
-      .filter(`receivedDateTime ge ${since}`)
-      .select(select)
-      .orderby("receivedDateTime desc")
-      .top(pageSize)
-      .get();
-
-    collected.push(...(response.value || []));
-
-    // Follow @odata.nextLink pages until we have enough or pages are exhausted
-    while (response["@odata.nextLink"] && collected.length < top) {
-      response = await client.api(response["@odata.nextLink"]).get();
-      collected.push(...(response.value || []));
-    }
-
-    // Trim to requested top
-    const messages = collected.slice(0, top);
-
-    const emails = messages.map((msg) => {
-      const obj = {
-        id: msg.id,
-        subject: msg.subject,
-        from: msg.from?.emailAddress?.address,
-        fromName: msg.from?.emailAddress?.name,
-        received: msg.receivedDateTime,
-        receivedAt: msg.receivedDateTime,
-        isRead: msg.isRead,
-        importance: msg.importance,
-        hasAttachments: msg.hasAttachments,
-        preview: msg.bodyPreview?.slice(0, 300),
-      };
-      if (bodyChars > 0) {
-        obj.body = stripHtml(msg.body?.content || "").slice(0, bodyChars);
-      }
-      return obj;
-    });
+    const emails = await fetchMail(account, { hours, folder, max: top, bodyChars });
 
     console.log(JSON.stringify(emails, null, 2));
   } catch (err) {

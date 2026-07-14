@@ -19,8 +19,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classify, detectBulkSignals } from "./classify-emails.js";
-import { buildGraphClient } from "./graph-client.js";
-import { buildGmailClient, mapGmailMessage } from "./gmail-client.js";
+import { fetchMail } from "./mail.js";
 import "dotenv/config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -45,117 +44,11 @@ function loadConfig() {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch: Outlook
-// ---------------------------------------------------------------------------
-
-async function fetchOutlook(accountId, hours, max = 200) {
-  const email = process.env[`${accountId.toUpperCase()}_EMAIL`];
-  if (!email) throw new Error(`Missing ${accountId.toUpperCase()}_EMAIL in .env`);
-
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  const client = await buildGraphClient(accountId);
-
-  // Paginate: Graph caps a page at 1000; follow @odata.nextLink until we have
-  // `max` messages or run out. Without this a long window would only see the
-  // most-recent page and silently undercount.
-  const collected = [];
-  let response = await client
-    .api(`/users/${email}/mailFolders/inbox/messages`)
-    .filter(`receivedDateTime ge ${since}`)
-    .select("id,subject,from,receivedDateTime,isRead,bodyPreview,importance,hasAttachments,internetMessageHeaders")
-    .orderby("receivedDateTime desc")
-    .top(Math.min(max, 1000))
-    .get();
-  collected.push(...(response.value || []));
-  while (response["@odata.nextLink"] && collected.length < max) {
-    response = await client.api(response["@odata.nextLink"]).get();
-    collected.push(...(response.value || []));
-  }
-
-  return collected.slice(0, max).map((msg) => {
-    const inetHeaders = msg.internetMessageHeaders || [];
-    const getInetHeader = (name) =>
-      inetHeaders.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
-
-    return {
-      id: msg.id,
-      subject: msg.subject,
-      from: msg.from?.emailAddress?.address,
-      fromName: msg.from?.emailAddress?.name,
-      received: msg.receivedDateTime,
-      isRead: msg.isRead,
-      importance: msg.importance,
-      hasAttachments: msg.hasAttachments,
-      preview: msg.bodyPreview?.slice(0, 300),
-      hasListUnsubscribe: !!getInetHeader("List-Unsubscribe"),
-      precedence: getInetHeader("Precedence") || null,
-      toRecipients: getInetHeader("To"),
-      ccRecipients: getInetHeader("Cc"),
-      gmailCategories: [],
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Fetch: Gmail
-// ---------------------------------------------------------------------------
-
-async function fetchGmail(hours, maxResults) {
-  const gmail = await buildGmailClient();
-  const afterEpoch = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
-  const query = `in:inbox after:${afterEpoch}`;
-
-  // Paginate message IDs
-  const messageIds = [];
-  let pageToken;
-  do {
-    const listRes = await gmail.users.messages.list({
-      userId: "me",
-      q: query,
-      maxResults: Math.min(maxResults - messageIds.length, 100),
-      pageToken,
-    });
-    for (const m of listRes.data.messages || []) {
-      messageIds.push(m.id);
-    }
-    pageToken = listRes.data.nextPageToken;
-  } while (pageToken && messageIds.length < maxResults);
-
-  // Fetch metadata concurrently in batches of 50
-  const emails = [];
-  for (let i = 0; i < messageIds.length; i += 50) {
-    const batch = messageIds.slice(i, i + 50);
-    const results = await Promise.all(
-      batch.map((id) =>
-        gmail.users.messages.get({
-          userId: "me",
-          id,
-          format: "metadata",
-          metadataHeaders: ["From", "Subject", "Date", "List-Unsubscribe", "Precedence", "To", "Cc"],
-        })
-      )
-    );
-
-    for (const res of results) {
-      const e = mapGmailMessage(res.data, { previewLimit: 300 });
-      e.fromName = e.fromName || e.from; // preserve triage's display-name fallback
-      emails.push(e);
-    }
-  }
-
-  emails.sort((a, b) => new Date(b.received) - new Date(a.received));
-  return emails;
-}
-
-// ---------------------------------------------------------------------------
 // Fetch dispatcher
 // ---------------------------------------------------------------------------
 
 async function fetchAccount(account, hours, maxResults) {
-  if (account.provider === "gmail") {
-    return fetchGmail(hours, maxResults);
-  }
-  return fetchOutlook(account.id, hours, maxResults);
+  return fetchMail(account, { hours, max: maxResults });
 }
 
 // ---------------------------------------------------------------------------

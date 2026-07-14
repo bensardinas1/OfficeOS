@@ -1,38 +1,29 @@
 /**
- * delete-gmail-emails.js <messageId1> [messageId2 ...]
+ * delete-gmail-emails.js <accountId> <messageId1> [messageId2 ...]
  *
- * Moves the specified Gmail messages to trash (soft delete, recoverable for 30 days).
+ * Moves the specified Gmail messages to trash (soft delete, recoverable for
+ * 30 days). Thin shim over scripts/mail.js deleteEmails, which calls
+ * users.messages.trash per id.
  *
  * Usage:
- *   node scripts/delete-gmail-emails.js <id1> <id2> ...
+ *   node scripts/delete-gmail-emails.js <accountId> <id1> <id2> ...
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { deleteEmails } from "./mail.js";
 
-import { buildGmailClient } from "./gmail-client.js";
-import { verifyGmailAccount } from "./gmail-verify.js";
+const [, , accountId, ...messageIds] = process.argv;
 
-// First positional is accountId; we use it to verify the authenticated Gmail
-// session matches the configured account before mutating any messages.
-const [, , accountIdArg, ...messageIds] = process.argv;
-
-if (!accountIdArg || messageIds.length === 0) {
+if (!accountId || messageIds.length === 0) {
   console.error("Usage: node scripts/delete-gmail-emails.js <accountId> <messageId1> [messageId2 ...]");
   process.exit(1);
 }
 
-const gmail = await buildGmailClient();
-await verifyGmailAccount(gmail, accountIdArg);
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const companies = JSON.parse(readFileSync(join(root, "config/companies.json"), "utf-8"));
+const account = companies.companies.find((c) => c.id === accountId) || { id: accountId, provider: "gmail" };
 
-let trashed = 0;
-let failed = 0;
-
-for (const id of messageIds) {
-  try {
-    await gmail.users.messages.trash({ userId: "me", id });
-    trashed++;
-  } catch (err) {
-    console.error(`Failed to trash ${id}: ${err.message}`);
-    failed++;
-  }
-}
-
-console.log(`Done: ${trashed} trashed${failed ? `, ${failed} failed` : ""}.`);
+const r = await deleteEmails(account, messageIds);
+for (const id of r.failedIds) console.error(`FAILED: ${id}`);
+console.log(`Done: ${r.trashed} trashed${r.failed ? `, ${r.failed} failed` : ""}.`);
