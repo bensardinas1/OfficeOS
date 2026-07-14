@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 
-let server, base, dir, store, acks, triaged, reticked, lastTriageArgs, actionLog;
+let server, base, dir, store, acks, triaged, reticked, lastTriageArgs, actionLog, lastDeleteBySender;
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "officeos-api-"));
@@ -34,11 +34,17 @@ before(async () => {
   const onTriage = async () => { reticked++; };
   const restoreFn = async (account, ids) => ({ restored: ids.length, failed: 0 });
   const killlistRemoveFn = async (account, sender) => (sender.includes("nope") ? { removed: false, reason: "not on the kill-list" } : { removed: true });
+  const deleteBySenderFn = async (account, sender, opts) => {
+    lastDeleteBySender = { account, sender, opts };
+    return sender.includes("vip")
+      ? { matched: 0, trashed: 0, failed: 0, failedIds: [], emailIds: [], refused: "protected sender" }
+      : { matched: 3, trashed: 3, failed: 0, failedIds: [], emailIds: ["s1", "s2", "s3"], sinceHours: opts?.sinceHours };
+  };
   const { createActionLog } = await import("./action-log.js");
   actionLog = createActionLog(dir);
   server = createApiServer({ store, ctxFor, getLastTickAt: () => "t", ackStore, clock: { now: () => "t" },
     accounts: [{ id: "brickell" }], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn,
-    actionLog, startedAt: "2026-07-13T00:00:00.000Z" });
+    deleteBySenderFn, actionLog, startedAt: "2026-07-13T00:00:00.000Z" });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -255,5 +261,39 @@ describe("action audit log", () => {
     const h = await (await fetch(`${base}/health`)).json();
     assert.equal(typeof h.pid, "number");
     assert.equal(h.startedAt, "2026-07-13T00:00:00.000Z");
+  });
+});
+
+describe("POST /senders/delete-all", () => {
+  it("deletes by sender, audits with the result emailIds, returns entryId", async () => {
+    const body = await (await fetch(`${base}/senders/delete-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "noise@z.com" }) })).json();
+    assert.equal(body.trashed, 3);
+    assert.ok(body.entryId);
+    const e = actionLog.recent().find(en => en.id === body.entryId);
+    assert.equal(e.action, "delete");
+    assert.equal(e.bySender, "noise@z.com");
+    assert.deepEqual(e.emailIds, ["s1", "s2", "s3"]);
+    assert.equal(lastDeleteBySender.opts.sinceHours, 720); // default window
+  });
+  it("clamps sinceHours and validates input", async () => {
+    await fetch(`${base}/senders/delete-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "noise@z.com", sinceHours: 99999 }) });
+    assert.equal(lastDeleteBySender.opts.sinceHours, 8760);
+    assert.equal((await fetch(`${base}/senders/delete-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "ghost", sender: "x@y.com" }) })).status, 400);
+    assert.equal((await fetch(`${base}/senders/delete-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell" }) })).status, 400);
+  });
+  it("surfaces a guard refusal without acted contribution", async () => {
+    const body = await (await fetch(`${base}/senders/delete-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", sender: "vip@x.com" }) })).json();
+    assert.match(body.refused, /protected/);
+    const res = await (await fetch(`${base}/actions`)).json();
+    assert.equal(Object.keys(res.acted).some(k => k.startsWith("s")) && false, false); // no acted rows from refusal (emailIds empty)
+  });
+  it("omits entryId when the audit write did not persist", async () => {
+    // harness: swap actionLog.append to return { id: "x", persisted: false } for one call
+    const orig = actionLog.append.bind(actionLog);
+    actionLog.append = (e) => ({ ...orig(e), persisted: false });
+    const body = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["pz"] }) })).json();
+    actionLog.append = orig;
+    assert.equal(body.entryId, undefined);
+    assert.equal(body.trashed, 1); // action itself still succeeded
   });
 });

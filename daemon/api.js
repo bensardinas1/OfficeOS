@@ -8,6 +8,7 @@
  *   GET  /events                     -> SSE stream; emits "update" on tick diffs
  *   POST /proposals/:id/approve      -> transition->approved, run executor, ->executed/failed
  *   POST /proposals/:id/dismiss      -> transition->dismissed
+ *   POST /senders/delete-all         -> soft-delete all messages from a sender (bounded by sinceHours)
  *
  * Dependencies are injected:
  *   store        createStore(dataDir)
@@ -43,8 +44,15 @@ function readJson(req) {
   });
 }
 
+// entryId is only surfaced when the audit line actually hit disk — otherwise
+// the client treats the action as session-only instead of server-backed
+// (prevents acted state vanishing on the next /actions reconcile).
+function entryIdOf(entry) {
+  return entry && entry.persisted !== false ? { entryId: entry.id } : {};
+}
+
 export function createApiServer(deps) {
-  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn, actionLog, startedAt } = deps;
+  const { store, ctxFor, getLastTickAt, webDir = DEFAULT_WEB_DIR, ackStore, clock, accounts = [], fetchBodyFn, deleteFn, killlistFn, runTriageFn, onTriage, restoreFn, killlistRemoveFn, deleteBySenderFn, actionLog, startedAt } = deps;
   const sseClients = new Set();
 
   async function approve(id, res) {
@@ -87,6 +95,20 @@ export function createApiServer(deps) {
   function persist(queue, id, updated) {
     queue.proposals = queue.proposals.map(p => (p.id === id ? updated : p));
     store.saveQueue(queue);
+  }
+
+  // One shape for mutate→audit→respond. See entryIdOf() above for why entryId
+  // can be omitted.
+  async function withAudit(res, base, exec) {
+    try {
+      const result = await exec();
+      const entryBase = (!base.emailIds && Array.isArray(result?.emailIds)) ? { ...base, emailIds: result.emailIds } : base;
+      const entry = actionLog?.append({ ...entryBase, result });
+      return send(res, 200, { ...result, ...entryIdOf(entry) });
+    } catch (err) {
+      const entry = actionLog?.append({ ...base, result: { error: err.message } });
+      return send(res, 200, { ok: false, error: err.message, ...entryIdOf(entry) });
+    }
   }
 
   function broadcast(event) {
@@ -164,28 +186,23 @@ export function createApiServer(deps) {
       const account = body?.account, ids = body?.emailIds;
       if (!accounts.some(a => a.id === account) || !Array.isArray(ids) || ids.length === 0) return send(res, 400, { error: "account and non-empty emailIds required" });
       const base = { action: "delete", account, emailIds: ids, ...(body?.undoOf ? { undoOf: body.undoOf } : {}) };
-      try {
-        const result = await deleteFn(account, ids);
-        const entry = actionLog?.append({ ...base, result });
-        return send(res, 200, { ...result, entryId: entry?.id });
-      } catch (err) {
-        const entry = actionLog?.append({ ...base, result: { error: err.message } });
-        return send(res, 200, { ok: false, error: err.message, entryId: entry?.id });
-      }
+      return withAudit(res, base, () => deleteFn(account, ids));
     }
     if (req.method === "POST" && path === "/senders/killlist") {
       const body = await readJson(req);
       const account = body?.account, sender = body?.sender;
       if (!accounts.some(a => a.id === account) || !sender) return send(res, 400, { error: "account and sender required" });
       const base = { action: "killlist_add", account, sender, emailIds: body?.emailIds || [], ...(body?.undoOf ? { undoOf: body.undoOf } : {}) };
-      try {
-        const result = await killlistFn(account, sender);
-        const entry = actionLog?.append({ ...base, result });
-        return send(res, 200, { ...result, entryId: entry?.id });
-      } catch (err) {
-        const entry = actionLog?.append({ ...base, result: { error: err.message } });
-        return send(res, 200, { ok: false, error: err.message, entryId: entry?.id });
-      }
+      return withAudit(res, base, () => killlistFn(account, sender));
+    }
+    if (req.method === "POST" && path === "/senders/delete-all") {
+      const body = await readJson(req);
+      const account = body?.account, sender = body?.sender;
+      if (!accounts.some(a => a.id === account) || !sender) return send(res, 400, { error: "account and sender required" });
+      const raw = Number(body?.sinceHours);
+      const sinceHours = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 8760) : 720;
+      const base = { action: "delete", account, bySender: sender, ...(body?.undoOf ? { undoOf: body.undoOf } : {}) };
+      return withAudit(res, base, () => deleteBySenderFn(account, sender, { sinceHours }));
     }
     if (req.method === "POST" && path === "/actions/triage") {
       const body = await readJson(req);
@@ -197,10 +214,10 @@ export function createApiServer(deps) {
         const r = await runTriageFn(body?.account || null, lookbackHours);
         if (onTriage) await onTriage();
         const entry = actionLog?.append({ action: "triage", account: body?.account || null, result: { ok: true, lookbackHours } });
-        return send(res, 200, { ok: true, ...r, entryId: entry?.id });
+        return send(res, 200, { ok: true, ...r, ...entryIdOf(entry) });
       } catch (err) {
         const entry = actionLog?.append({ action: "triage", account: body?.account || null, result: { error: err.message } });
-        return send(res, 200, { ok: false, error: err.message, entryId: entry?.id });
+        return send(res, 200, { ok: false, error: err.message, ...entryIdOf(entry) });
       }
     }
     if (req.method === "POST" && path === "/messages/restore") {
@@ -208,28 +225,14 @@ export function createApiServer(deps) {
       const account = body?.account, ids = body?.emailIds;
       if (!accounts.some(a => a.id === account) || !Array.isArray(ids) || ids.length === 0) return send(res, 400, { error: "account and non-empty emailIds required" });
       const base = { action: "restore", account, emailIds: ids, ...(body?.undoOf ? { undoOf: body.undoOf } : {}) };
-      try {
-        const result = await restoreFn(account, ids);
-        const entry = actionLog?.append({ ...base, result });
-        return send(res, 200, { ...result, entryId: entry?.id });
-      } catch (err) {
-        const entry = actionLog?.append({ ...base, result: { error: err.message } });
-        return send(res, 200, { ok: false, error: err.message, entryId: entry?.id });
-      }
+      return withAudit(res, base, () => restoreFn(account, ids));
     }
     if (req.method === "POST" && path === "/senders/killlist/remove") {
       const body = await readJson(req);
       const account = body?.account, sender = body?.sender;
       if (!accounts.some(a => a.id === account) || !sender) return send(res, 400, { error: "account and sender required" });
       const base = { action: "killlist_remove", account, sender, ...(body?.undoOf ? { undoOf: body.undoOf } : {}) };
-      try {
-        const result = await killlistRemoveFn(account, sender);
-        const entry = actionLog?.append({ ...base, result });
-        return send(res, 200, { ...result, entryId: entry?.id });
-      } catch (err) {
-        const entry = actionLog?.append({ ...base, result: { error: err.message } });
-        return send(res, 200, { ok: false, error: err.message, entryId: entry?.id });
-      }
+      return withAudit(res, base, () => killlistRemoveFn(account, sender));
     }
 
     if (req.method === "GET") return serveStatic(path, res);
