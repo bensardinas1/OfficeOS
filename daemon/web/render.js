@@ -120,7 +120,7 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
     : `${approveBtn}${routeBtn}${ackBtn}${detailBtn}${delBtn}${killBtn}${delkillBtn}${dismissBtn}`;
 
   return `<div class="card ${esc(item.status)}${acted ? " acted" : ""}" data-item="${esc(item.id)}">`
-    + `<label class="sel"><input type="checkbox" data-select="${esc(item.id)}"> select</label>`
+    + `<label class="sel"><input type="checkbox" data-select="item:${esc(item.id)}"> select</label>`
     + `<div class="cardhdr"><span class="chip">${esc(CHIP_LABELS[item.jobType] || item.jobType || "")}</span>`
     + `${when ? `<span class="when">${esc(when)}</span>` : ""}</div>`
     + `<div class="title">${esc(item.title)}</div>`
@@ -261,11 +261,20 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
     + `</aside>`;
 }
 
-export function renderSelectControls(selectedCount) {
-  return `<div class="bulk">
-    <span>${esc(selectedCount)} selected</span>
-    <button class="bulk-approve" data-bulk-approve ${selectedCount ? "" : "disabled"}>✓ Approve selected</button>
-  </div>`;
+export function renderBulkBar(selectedCount, ui = {}) {
+  if (!selectedCount) return "";
+  if (ui.bulkBusy) return `<div class="bulkbar"><span class="bulkcount">Working (${esc(ui.bulkBusy.done)}/${esc(ui.bulkBusy.total)})…</span></div>`;
+  const confirm = ui.confirm || null;
+  const b = (attr, token, cls, verb) => confirmBtn({ cls, attr, value: "1", token, verb, confirm });
+  return `<div class="bulkbar">`
+    + `<span class="bulkcount">${esc(selectedCount)} selected</span>`
+    + `<button class="bulk-approve" data-bulk-approve>✓ Approve</button>`
+    + b("data-bulk-delete", "bulk:delete", "del", "delete")
+    + b("data-bulk-kill", "bulk:kill", "kill", "kill list")
+    + b("data-bulk-delkill", "bulk:delkill", "delkill", "Delete and Kill")
+    + b("data-bulk-undo", "bulk:undo", "ack", "undo")
+    + `<button class="bulk-clear" data-bulk-clear>Clear</button>`
+    + `</div>`;
 }
 
 export function renderUndoBar(undo) {

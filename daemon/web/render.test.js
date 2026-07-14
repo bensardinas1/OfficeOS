@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, renderRunTriage, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, renderRunTriage, renderBulkBar, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -255,6 +255,24 @@ describe("renderRunTriage", () => {
     const html = renderRunTriage(false, { mode: "custom", days: "10" });
     assert.match(html, /data-triage-mode="custom"[^>]* checked/);
     assert.doesNotMatch(html.match(/id="triagedays"[^>]*>/)[0], /disabled/);
+  });
+});
+
+describe("renderBulkBar", () => {
+  it("renders nothing at 0 selected", () => assert.equal(renderBulkBar(0), ""));
+  it("renders count, action buttons, and Clear", () => {
+    const html = renderBulkBar(3, {});
+    assert.match(html, /3 selected/);
+    for (const attr of ["data-bulk-approve", "data-bulk-delete", "data-bulk-kill", "data-bulk-delkill", "data-bulk-undo", "data-bulk-clear"]) assert.match(html, new RegExp(attr));
+    assert.match(html, /data-token="bulk:delete"/);
+  });
+  it("shows armed confirm labels via the shared confirm machinery", () => {
+    assert.match(renderBulkBar(2, { confirm: "bulk:delete" }), /Confirm delete\?/);
+  });
+  it("shows only progress while a bulk run is in flight", () => {
+    const html = renderBulkBar(2, { bulkBusy: { done: 1, total: 4 } });
+    assert.match(html, /Working \(1\/4\)/);
+    assert.doesNotMatch(html, /data-bulk-delete/);
   });
 });
 

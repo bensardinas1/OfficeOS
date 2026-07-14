@@ -4,12 +4,12 @@
  * slide-in detail, undo, two-click-confirm, and notice UI. No business logic here.
  */
 import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
-import { renderHeader, renderAccountSection, renderDetailPanel, renderSelectControls, renderUndoBar, renderNoticeBar, renderRunTriage, esc } from "./render.js";
+import { renderHeader, renderAccountSection, renderDetailPanel, renderBulkBar, renderUndoBar, renderNoticeBar, renderRunTriage, esc } from "./render.js";
 import { toggle, pendingApprovalsFor } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, notice: null, triaging: false, triageMode: "default", triageDays: "10", acted: {} };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, bulkBusy: null, notice: null, triaging: false, triageMode: "default", triageDays: "10", acted: {} };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 let desiredDetailScroll = 0; // detail-pane scroll to preserve across re-renders + async body fills
@@ -61,7 +61,7 @@ function draw() {
   appEl.innerHTML =
     renderHeader(view)
     + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging, { mode: ui.triageMode, days: ui.triageDays })}</div>`
-    + renderSelectControls(selected.size)
+    + renderBulkBar(selected.size, { confirm: ui.confirm, bulkBusy: ui.bulkBusy })
     + (sections || '<div class="empty">All clear.</div>')
     + detail
     + renderUndoBar(ui.undo)
