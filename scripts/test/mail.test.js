@@ -30,7 +30,7 @@ function fakeGraph(pages) {
 }
 
 function graphMsg(i) {
-  return { id: `m${i}`, subject: `s${i}`, from: { emailAddress: { address: `a${i}@x.com`, name: `A${i}` } },
+  return { id: `m${i}`, conversationId: "conv-A", subject: `s${i}`, from: { emailAddress: { address: `a${i}@x.com`, name: `A${i}` } },
     receivedDateTime: `2026-07-0${(i % 9) + 1}T00:00:00Z`, isRead: false, importance: "normal",
     hasAttachments: false, bodyPreview: "p".repeat(400),
     internetMessageHeaders: [{ name: "List-Unsubscribe", value: "<mailto:u@x.com>" }, { name: "To", value: "me@brickell.com" }] };
@@ -48,6 +48,7 @@ describe("fetchMail — outlook", () => {
     const emails = await fetchMail(outlookAcct, { hours: 24, max: 3 });
     assert.equal(emails.length, 3);
     assert.equal(emails[0].id, "m1");
+    assert.equal(emails[0].conversationId, "conv-A");
     assert.equal(emails[0].from, "a1@x.com");
     assert.equal(emails[0].hasListUnsubscribe, true);
     assert.equal(emails[0].toRecipients, "me@brickell.com");
@@ -97,6 +98,7 @@ describe("fetchMail — gmail", () => {
     const emails = await fetchMail(gmailAcct, { hours: 24, max: 120 });
     assert.equal(emails.length, 120); // crossed the old 100 cap
     assert.ok(emails.every(e => e.id && e.subject));
+    assert.ok(emails.every(e => e.conversationId === e.threadId && e.conversationId));
   });
 });
 

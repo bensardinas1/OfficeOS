@@ -76,13 +76,14 @@ function outlookAddress(account) {
   return email;
 }
 
-const OUTLOOK_SELECT = "id,subject,from,receivedDateTime,isRead,bodyPreview,importance,hasAttachments,internetMessageHeaders";
+const OUTLOOK_SELECT = "id,conversationId,subject,from,receivedDateTime,isRead,bodyPreview,importance,hasAttachments,internetMessageHeaders";
 
 function mapOutlookMessage(msg, bodyChars) {
   const inet = msg.internetMessageHeaders || [];
   const h = (name) => inet.find(x => x.name.toLowerCase() === name.toLowerCase())?.value || "";
   const obj = {
     id: msg.id,
+    conversationId: msg.conversationId || null,
     subject: msg.subject,
     from: msg.from?.emailAddress?.address,
     fromName: msg.from?.emailAddress?.name,
@@ -146,6 +147,7 @@ export async function fetchMail(account, { hours = 24, folder = "inbox", max = 2
       for (const r of batch) {
         const e = mapGmailMessage(r.data, { previewLimit: 300 });
         e.fromName = e.fromName || e.from;
+        e.conversationId = e.threadId || null;
         emails.push(e);
       }
     }
