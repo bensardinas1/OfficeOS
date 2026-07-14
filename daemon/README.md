@@ -83,9 +83,42 @@ thin shims that invoke mail.js functions. The daemon calls mail.js in-process vi
 
 Open `http://localhost:8138/` (served by the daemon). It live-updates via SSE,
 shows what needs you grouped by account, and lets you approve/dismiss proposals
-or multi-select for a bulk approve. Pin it as a standalone window for an ambient
-glance. Toasts fire automatically when new at-risk items appear or an account
-goes stale.
+or drill in for multi-select bulk actions. Pin it as a standalone window for an
+ambient glance. Toasts fire automatically when new at-risk items appear or an
+account goes stale.
+
+### Bulk workbench (multi-select + drill-in)
+
+Click **Details** on any item to open its drill-in pane. For `handled` items (email
+triage), the pane shows two sections:
+
+- **Conversations**: human mail grouped by provider conversation ID (with Re:/Fwd: 
+  display-stripping), each conversation showing senders and message count
+- **Bulk senders**: automated mail clustered by sender, each cluster showing individual
+  messages and action buttons
+
+Click the checkbox on a card, sender-cluster header, or conversation header to select it
+(typed keys: `item:<itemId>`, `cluster:<account>:<sender>`, `conv:<account>:<conversationId>`).
+The sticky bulk bar appears at the bottom with the count and action buttons: **Approve** ·
+**Delete** · **Kill list** · **Delete and Kill** · **Undo** · **Clear**.
+
+Two-click confirm: first click arms a button to show "Confirm <verb>?", second executes.
+The bar shows "Working (k/n)…" with a progress counter during multi-batch operations and
+stays clickable above the open detail pane. An aggregate summary notice surfaces the
+outcome: deleted count (with breakdowns by sender/tile/conversation), kill-listed count,
+restored count, refusals (protected senders), and skipped items with reasons.
+
+### Semantics
+
+- **Conversations & tiles** delete by precise message IDs only
+- **Sender clusters** use the guarded `/senders/delete-all` query (protected senders,
+  30-day window, 1000-email match cap)
+- **Kill list** resolves single senders and surfaces refusals if the sender is protected
+- **Undo** restores deleted messages and reverses kill-list entries
+
+The panel's dim/strike and Undo state survives reloads and daemon restarts (backed by
+`data/actions.jsonl`). Note: the `conversationId` plumbing requires a daemon restart
+after the first triage run to populate conversation IDs.
 
 Dev preview without live email:
 
