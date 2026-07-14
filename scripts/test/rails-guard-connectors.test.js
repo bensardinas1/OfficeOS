@@ -53,6 +53,23 @@ describe("connector rails guard — killlist-add writes config only", () => {
   });
 });
 
+describe("connector rails guard — mail.js (unified connector) never sends/permanent-deletes, guards wired", () => {
+  it("mail.js soft-deletes only, refuses via isProtectedSender, and never sends", () => {
+    const src = read("mail.js");
+    assert.match(src, /deleteditems/i, "must move to deleteditems (soft delete)");
+    assert.match(src, /isProtectedSender/, "must wire the protected-sender guard");
+    const FORBIDDEN = [
+      /\bpermanentDelete\b/i,
+      /\bbatchDelete\b/i,
+      /users\.messages\.delete\(/i,
+      /\bsendMail\b/i,
+      /messages\.send\b/i,
+    ];
+    const hits = FORBIDDEN.filter(rx => rx.test(src)).map(String);
+    assert.deepEqual(hits, [], `mail.js must not reference a send/permanent-delete API: ${hits.join(", ")}`);
+  });
+});
+
 describe("connector rails guard — restore + killlist-remove", () => {
   for (const f of ["restore-emails.js", "restore-gmail-emails.js"]) {
     it(`${f} restores (move/untrash) and never sends or permanent-deletes`, () => {

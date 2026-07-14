@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { fetchMail, stripHtml, _setClientFactoryForTest } from "../mail.js";
+import { fetchMail, stripHtml, _setClientFactoryForTest, deleteBySender } from "../mail.js";
 
 const outlookAcct = { id: "brickell", provider: "outlook", myEmail: "me@brickell.com" };
 const gmailAcct = { id: "personal", provider: "gmail" };
@@ -168,5 +168,64 @@ describe("fetchMessageBody", () => {
     const data = { id: "g1", payload: { mimeType: "text/plain", body: { data: Buffer.from("yo").toString("base64") } } };
     _setClientFactoryForTest(async () => ({ users: { messages: { get: async () => ({ data }) } } }));
     assert.deepEqual(await fetchMessageBody(gmailAcct, "g1"), { id: "g1", body: "yo" });
+  });
+});
+
+describe("deleteBySender", () => {
+  const acct = { id: "brickell", provider: "outlook", myEmail: "me@brickell.com",
+    prioritySenders: [{ type: "email", value: "vip@x.com" }] };
+
+  it("refuses protected senders before any API call", async () => {
+    _setClientFactoryForTest(async () => { throw new Error("must not build a client"); });
+    const r = await deleteBySender(acct, "vip@x.com");
+    assert.equal(r.refused ? true : false, true);
+    assert.deepEqual([r.matched, r.trashed, r.emailIds.length], [0, 0, 0]);
+  });
+
+  it("refuses correspondents", async () => {
+    _setClientFactoryForTest(async () => { throw new Error("must not build a client"); });
+    const r = await deleteBySender(acct, "friend@y.com", { correspondents: new Set(["friend@y.com"]) });
+    assert.match(r.refused, /correspond/i);
+  });
+
+  it("outlook: queries inbox by sender within the window, deletes matches, reports ids", async () => {
+    process.env.BRICKELL_EMAIL = "me@brickell.com";
+    const posted = [];
+    let filterSeen;
+    const client = { api: (url) => ({
+      filter: (f) => { filterSeen = f; return { select: () => ({ top: () => ({ get: async () => ({ value: [{ id: "d1" }, { id: "d2" }] }) }) }) }; },
+      post: async (b) => { posted.push(url); if (url.includes("d2")) throw new Error("x"); return {}; },
+    }) };
+    _setClientFactoryForTest(async () => client);
+    const r = await deleteBySender(acct, "noise@z.com", { sinceHours: 48 });
+    assert.match(filterSeen, /from\/emailAddress\/address eq 'noise@z\.com'/);
+    assert.match(filterSeen, /receivedDateTime ge /);
+    assert.equal(r.matched, 2);
+    assert.equal(r.trashed, 1);
+    assert.deepEqual(r.failedIds, ["d2"]);
+    assert.deepEqual(r.emailIds, ["d1"]); // only successfully deleted ids
+  });
+
+  it("clamps sinceHours into [1, 8760]", async () => {
+    let filterSeen;
+    const client = { api: () => ({
+      filter: (f) => { filterSeen = f; return { select: () => ({ top: () => ({ get: async () => ({ value: [] }) }) }) }; },
+    }) };
+    _setClientFactoryForTest(async () => client);
+    await deleteBySender(acct, "noise@z.com", { sinceHours: 999999 });
+    const iso = filterSeen.match(/ge (.+)$/)[1];
+    const hoursBack = (Date.now() - Date.parse(iso)) / 3600000;
+    assert.ok(hoursBack <= 8760 + 1, `window was ${hoursBack}h`);
+  });
+
+  it("gmail: uses from:+after: query and trashes matches", async () => {
+    let q;
+    _setClientFactoryForTest(async () => ({ users: { messages: {
+      list: async (args) => { q = args.q; return { data: { messages: [{ id: "g1" }] } }; },
+      trash: async () => ({}),
+    } } }));
+    const r = await deleteBySender(gmailAcct, "noise@z.com");
+    assert.match(q, /in:inbox from:noise@z\.com after:\d+/);
+    assert.deepEqual(r.emailIds, ["g1"]);
   });
 });

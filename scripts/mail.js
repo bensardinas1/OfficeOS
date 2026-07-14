@@ -215,3 +215,40 @@ export async function fetchMessageBody(account, emailId) {
   const msg = await client.api(path).select("id,body").get();
   return { id: msg.id, body: stripHtml(msg.body?.content || "") };
 }
+
+// ---------------------------------------------------------------------------
+// deleteBySender — intent-level bulk delete. GUARDS FIRST (same rails as the
+// kill-list): protected senders and correspondents are refused before any API
+// call. Inbox only; window clamped to [1h, 1y]; match cap 1000 per invocation.
+// ---------------------------------------------------------------------------
+const MATCH_CAP = 1000;
+
+export async function deleteBySender(account, sender, { sinceHours = 720, correspondents } = {}) {
+  const email = String(sender || "").trim().toLowerCase();
+  const none = { matched: 0, trashed: 0, failed: 0, failedIds: [], emailIds: [] };
+  if (!email || !email.includes("@")) return { ...none, refused: "not a valid email address" };
+  if (isProtectedSender(account, email)) return { ...none, refused: "protected sender (priority/never-delete/own domain)" };
+  if (correspondents && correspondents.has(email)) return { ...none, refused: "you've emailed this sender (correspondent)" };
+
+  const hours = Math.min(Math.max(Number(sinceHours) || 720, 1), 8760);
+  const client = await getClient(account);
+  let ids;
+  if ((account.provider || "outlook") === "gmail") {
+    const afterEpoch = Math.floor((Date.now() - hours * 3600 * 1000) / 1000);
+    ids = await gmailListIds(client, `in:inbox from:${email} after:${afterEpoch}`, MATCH_CAP);
+  } else {
+    const me = outlookAddress(account);
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const odataSender = email.replace(/'/g, "''");
+    const messages = await outlookCollect(client, () =>
+      client.api(`/users/${me}/mailFolders/inbox/messages`)
+        .filter(`from/emailAddress/address eq '${odataSender}' and receivedDateTime ge ${since}`)
+        .select("id")
+        .top(Math.min(MATCH_CAP, 1000))
+        .get(), MATCH_CAP);
+    ids = messages.map(m => m.id);
+  }
+  const del = await deleteEmails(account, ids);
+  const failedSet = new Set(del.failedIds);
+  return { matched: ids.length, ...del, emailIds: ids.filter(id => !failedSet.has(id)) };
+}
