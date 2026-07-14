@@ -26,7 +26,11 @@ function defaultFactory(account) {
 
 async function getClient(account) {
   const key = `${account.provider || "outlook"}:${account.id}`;
-  if (!clientCache.has(key)) clientCache.set(key, (clientFactory || defaultFactory)(account));
+  if (!clientCache.has(key)) {
+    const p = Promise.resolve((clientFactory || defaultFactory)(account));
+    clientCache.set(key, p);
+    p.catch(() => { if (clientCache.get(key) === p) clientCache.delete(key); });
+  }
   return clientCache.get(key);
 }
 
@@ -117,6 +121,7 @@ async function gmailListIds(client, q, max) {
 export async function fetchMail(account, { hours = 24, folder = "inbox", max = 200, bodyChars = 0 } = {}) {
   const client = await getClient(account);
   if ((account.provider || "outlook") === "gmail") {
+    // Gmail has labels, not folders — the folder param is Outlook-only (spec'd).
     const afterEpoch = Math.floor((Date.now() - hours * 3600 * 1000) / 1000);
     const ids = await gmailListIds(client, `in:inbox after:${afterEpoch}`, max);
     const emails = [];

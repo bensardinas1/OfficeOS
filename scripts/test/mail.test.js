@@ -5,7 +5,13 @@ import { fetchMail, stripHtml, _setClientFactoryForTest } from "../mail.js";
 const outlookAcct = { id: "brickell", provider: "outlook", myEmail: "me@brickell.com" };
 const gmailAcct = { id: "personal", provider: "gmail" };
 
-afterEach(() => _setClientFactoryForTest(null));
+const ORIGINAL_BRICKELL_EMAIL = process.env.BRICKELL_EMAIL;
+
+afterEach(() => {
+  _setClientFactoryForTest(null);
+  if (ORIGINAL_BRICKELL_EMAIL === undefined) delete process.env.BRICKELL_EMAIL;
+  else process.env.BRICKELL_EMAIL = ORIGINAL_BRICKELL_EMAIL;
+});
 
 /** Fake Graph client: .api(url).filter().select().orderby().top().get() with paging. */
 function fakeGraph(pages) {
@@ -90,6 +96,22 @@ describe("fetchMail — gmail", () => {
     const emails = await fetchMail(gmailAcct, { hours: 24, max: 120 });
     assert.equal(emails.length, 120); // crossed the old 100 cap
     assert.ok(emails.every(e => e.id && e.subject));
+  });
+});
+
+describe("getClient — cache eviction on rejected build", () => {
+  it("evicts a rejected client build so the next call can succeed", async () => {
+    let calls = 0;
+    _setClientFactoryForTest(async () => {
+      calls++;
+      if (calls === 1) throw new Error("boom");
+      return fakeGmail([{ messages: [{ id: "g1" }] }], gmailMeta);
+    });
+    await assert.rejects(() => fetchMail(gmailAcct, { hours: 24, max: 10 }), /boom/);
+    const emails = await fetchMail(gmailAcct, { hours: 24, max: 10 });
+    assert.equal(calls, 2); // cache was evicted, factory retried
+    assert.equal(emails.length, 1);
+    assert.equal(emails[0].id, "g1");
   });
 });
 
