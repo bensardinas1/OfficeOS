@@ -101,3 +101,37 @@ export function findItem(view, id) {
   }
   return null;
 }
+
+/** Display-only: strip stacked Re:/Fw:/Fwd: prefixes from a subject. */
+export function stripReplyPrefix(s) {
+  return String(s || "").replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, "").trim();
+}
+
+/**
+ * Split a handled tile's members for the two-section drill-in. Human mail
+ * (automated === false) groups by provider conversationId (singleton fallback
+ * per message); automated OR legacy members (no `automated` field) keep the
+ * sender-cluster view. No subject heuristics — labels are display-only.
+ */
+export function groupHandledMembers(members) {
+  const convs = new Map();
+  const senders = new Map();
+  for (const m of members || []) {
+    if (m.automated === false) {
+      const key = m.conversationId || `msg:${m.emailId}`;
+      if (!convs.has(key)) convs.set(key, []);
+      convs.get(key).push(m);
+    } else {
+      const from = (m.from || "").toLowerCase() || "__unknown__";
+      if (!senders.has(from)) senders.set(from, { from: m.from || "", label: m.fromName || m.from || "(unknown sender)", members: [] });
+      senders.get(from).members.push(m);
+    }
+  }
+  const conversations = [...convs.entries()].map(([key, list]) => {
+    const sorted = list.slice().sort((a, b) => String(a.receivedAt || "").localeCompare(String(b.receivedAt || "")));
+    const latest = sorted[sorted.length - 1];
+    const senderCount = new Set(sorted.map(x => (x.from || "").toLowerCase()).filter(Boolean)).size;
+    return { key, label: stripReplyPrefix(latest.subject) || "(no subject)", latestAt: latest.receivedAt || "", senderCount, members: sorted };
+  }).sort((a, b) => String(b.latestAt).localeCompare(String(a.latestAt)));
+  return { conversations, senders: [...senders.values()].sort((a, b) => b.members.length - a.members.length) };
+}

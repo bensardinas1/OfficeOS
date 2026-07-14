@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
+import { toPanelView, filterItems, filterGroups, findItem, groupHandledMembers, stripReplyPrefix } from "./view-model.js";
 
 const model = {
   generatedAt: "2026-06-17T12:00:00Z",
@@ -125,5 +125,56 @@ describe("filterGroups", () => {
     const g = filterGroups(v, { account: "summit" });
     assert.equal(g.length, 1);
     assert.equal(g[0].account, "summit");
+  });
+});
+
+describe("stripReplyPrefix", () => {
+  it("strips stacked Re:/Fwd:/Fw: prefixes, case-insensitive", () => {
+    assert.equal(stripReplyPrefix("RE: Fwd: re: Path Peptides underwriting"), "Path Peptides underwriting");
+    assert.equal(stripReplyPrefix("Regular subject"), "Regular subject");
+    assert.equal(stripReplyPrefix(""), "");
+  });
+});
+
+describe("groupHandledMembers", () => {
+  const m = (id, from, conv, automated, at, subject) =>
+    ({ emailId: id, from, fromName: from, conversationId: conv, automated, receivedAt: at, subject });
+
+  it("routes human mail to conversations grouped by conversationId, automated to sender groups", () => {
+    const members = [
+      m("e1", "luis@brickellpay.com", "cv-1", false, "2026-07-01T00:00:00Z", "Path Peptides underwriting"),
+      m("e2", "mckenna@partner.com", "cv-1", false, "2026-07-02T00:00:00Z", "RE: Path Peptides underwriting"),
+      m("e3", "noise@wp.com", null, true, "2026-07-03T00:00:00Z", "New order #1"),
+      m("e4", "noise@wp.com", null, true, "2026-07-04T00:00:00Z", "New order #2"),
+    ];
+    const g = groupHandledMembers(members);
+    assert.equal(g.conversations.length, 1);
+    assert.equal(g.conversations[0].key, "cv-1");
+    assert.equal(g.conversations[0].label, "Path Peptides underwriting"); // latest subject, prefix stripped
+    assert.equal(g.conversations[0].senderCount, 2);
+    assert.deepEqual(g.conversations[0].members.map(x => x.emailId), ["e1", "e2"]); // oldest-first
+    assert.equal(g.senders.length, 1);
+    assert.equal(g.senders[0].members.length, 2);
+  });
+
+  it("orders conversations newest-activity-first and falls back to singleton groups", () => {
+    const members = [
+      m("a1", "x@y.com", null, false, "2026-07-01T00:00:00Z", "Solo one"),   // no convId → singleton
+      m("b1", "z@y.com", "cv-2", false, "2026-07-05T00:00:00Z", "Newer thread"),
+    ];
+    const g = groupHandledMembers(members);
+    assert.deepEqual(g.conversations.map(c => c.key), ["cv-2", "msg:a1"]);
+  });
+
+  it("members missing the automated field fall back to sender groups (stale model)", () => {
+    const legacy = { emailId: "l1", from: "who@y.com", subject: "old", receivedAt: "2026-07-01T00:00:00Z" };
+    const g = groupHandledMembers([legacy]);
+    assert.equal(g.conversations.length, 0);
+    assert.equal(g.senders.length, 1);
+  });
+
+  it("handles empty/missing input", () => {
+    assert.deepEqual(groupHandledMembers([]), { conversations: [], senders: [] });
+    assert.deepEqual(groupHandledMembers(undefined), { conversations: [], senders: [] });
   });
 });
