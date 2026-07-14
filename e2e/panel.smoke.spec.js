@@ -24,22 +24,47 @@ function freePort() {
   });
 }
 
+// Two items:
+//  - "brickell:gateway:row" is a FLAT (non-clustered) tile — its detail pane
+//    renders a real per-row delete button (`del:msg:` token) for each member.
+//    Row-level ids are real (e0..e11), so the server-hydrated acted map
+//    (keyed by those emailIds) matches after a reload — this drives the
+//    acted/undo/reload assertions.
+//  - "brickell:handled" is a sender-CLUSTERED tile (jobType handled) — its
+//    detail pane renders a per-sender "delete all" button
+//    (`data-delete-sender`, posts /senders/delete-all). In fake-connector
+//    mode that route always returns a canned emailIds: ["f1","f2","f3"],
+//    matched: 3, trashed: 3 — which don't match this tile's seeded ids, so
+//    we only assert the resulting notice, not row-level dimming (see B1.8 brief).
 function seed(dataDir) {
   const now = new Date().toISOString();
-  const members = Array.from({ length: 12 }, (_, i) => ({
+  const rowMembers = Array.from({ length: 12 }, (_, i) => ({
     subject: `[TEST] message ${i}`, from: "noise@example.com", fromName: "Noise Co",
     emailId: `e${i}`, receivedAt: now,
+  }));
+  const clusterMembers = Array.from({ length: 3 }, (_, i) => ({
+    subject: `[CLUSTER] message ${i}`, from: "bulk@example.com", fromName: "Bulk Co",
+    emailId: `c${i}`, receivedAt: now,
   }));
   writeFileSync(join(dataDir, "world-model.json"), JSON.stringify({
     generatedAt: now,
     accounts: { brickell: { status: "ok", lastTickAt: now, label: "Brickell", accountType: "business" } },
-    items: [{
-      id: "brickell:handled", jobType: "handled", account: "brickell",
-      title: "12 need a reply or decision", subtitle: "", status: "ok",
-      display: { accountLabel: "Brickell" },
-      group: { rootCause: "handled", members, counts: { needsYou: 12, waiting: 0 }, moreCount: 0 },
-      source: [], proposedActions: [], lastChanged: now,
-    }],
+    items: [
+      {
+        id: "brickell:gateway:row", jobType: "gateway", account: "brickell",
+        title: "12 need a reply or decision", subtitle: "", status: "ok",
+        display: { accountLabel: "Brickell" },
+        group: { rootCause: "row", members: rowMembers, moreCount: 0 },
+        source: [], proposedActions: [], lastChanged: now,
+      },
+      {
+        id: "brickell:handled", jobType: "handled", account: "brickell",
+        title: "3 need a reply or decision", subtitle: "", status: "ok",
+        display: { accountLabel: "Brickell" },
+        group: { rootCause: "handled", members: clusterMembers, moreCount: 0 },
+        source: [], proposedActions: [], lastChanged: now,
+      },
+    ],
   }, null, 2), "utf-8");
   writeFileSync(join(dataDir, "proposal-queue.json"), JSON.stringify({ proposals: [] }), "utf-8");
 }
@@ -88,25 +113,25 @@ test.afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("delete → working → acted → undo → survives reload", async ({ page }) => {
+test("row delete → working → acted → undo → survives reload", async ({ page }) => {
   await page.goto(base);
   await expect(page.locator(".sechdr .seclabel")).toContainText("Brickell");
 
-  // Open details, scroll the pane, arm a per-cluster delete.
+  // Open the flat tile's detail pane, scroll it, arm a per-row delete.
   //
   // NOTE vs. the brief: Playwright's click() always scrolls its target into view
   // first (this happens unconditionally, even with force: true — it's not gated by
-  // the "actionability checks" force skips). The "Delete all" button sits in the
-  // sender-group header at the top of the scrollable message list, so scrolling
+  // the "actionability checks" force skips). The row delete button sits inside the
+  // first message row near the top of the scrollable message list, so scrolling
   // deep (e.g. scrollTop=300) pushes it out of view and Playwright's own
   // scroll-into-view resets the pane's scroll as a side effect of the click itself
   // — that would falsely look like the app failing to preserve scroll. Verified via
   // an in-page (non-Playwright) button.click() that the app's own draw()-triggered
   // restoreDetailScroll() does correctly preserve scrollTop across the re-render.
-  // So: scroll to an offset where the header (and its .del button) is still fully
+  // So: scroll to an offset where the row (and its .del button) is still fully
   // within the pane's viewport — Playwright's scroll-into-view is then a no-op —
   // which lets the assertion observe the app's actual preservation behavior.
-  await page.locator("button.detail").first().click();
+  await page.locator('[data-detail="brickell:gateway:row"]').click();
   const pane = page.locator("aside.detail");
   await expect(pane).toBeVisible();
   const geo = await page.evaluate(() => {
@@ -122,7 +147,7 @@ test("delete → working → acted → undo → survives reload", async ({ page 
   const scrollAfterArm = await pane.evaluate(el => el.scrollTop);
   expect(scrollAfterArm).toBe(scrollTarget);                         // scroll preserved exactly
 
-  // confirm → Working… → acted rows with Undo
+  // confirm → Working… → acted row with Undo
   await page.locator("aside.detail .del.armed").first().click();
   await expect(page.locator("aside.detail .msg.acted").first()).toBeVisible();
   await expect(page.locator('[data-undo-acted]').first()).toBeVisible();
@@ -131,15 +156,10 @@ test("delete → working → acted → undo → survives reload", async ({ page 
 
   // reload — acted state must survive (served from the action log)
   await page.reload();
-  await page.locator("button.detail").first().click();
+  await page.locator('[data-detail="brickell:gateway:row"]').click();
   await expect(page.locator("aside.detail .msg.acted").first()).toBeVisible();
 
-  // undo one member — server-side semantics: a cluster delete creates ONE
-  // action-log entry covering all 12 members, but undo accounting is PER-ROW:
-  // each row's server-hydrated acted value carries emailIds: [thatRowId] plus
-  // the shared deleteEntryId, so the undo handler's restore call posts only
-  // that one id (with undoOf: <sharedEntryId>). deriveActed() then neutralizes
-  // just that id, leaving the other 11 members acted.
+  // undo the acted row
   const actedBefore = await page.locator("aside.detail .msg.acted").count();
   expect(actedBefore).toBeGreaterThan(0);
   await page.locator('[data-undo-acted]').first().click();
@@ -147,6 +167,27 @@ test("delete → working → acted → undo → survives reload", async ({ page 
 
   // and the undo also survives a reload
   await page.reload();
-  await page.locator("button.detail").first().click();
+  await page.locator('[data-detail="brickell:gateway:row"]').click();
   await expect(page.locator("aside.detail .msg.acted")).toHaveCount(actedBefore - 1);
+});
+
+test("cluster delete-all posts the intent-level /senders/delete-all", async ({ page }) => {
+  await page.goto(base);
+  await expect(page.locator(".sechdr .seclabel")).toContainText("Brickell");
+
+  // Open the sender-clustered tile's detail pane and drive its "delete all"
+  // button — this is the button rewired by B1.8 from data-delete to
+  // data-delete-sender, posting /senders/delete-all instead of /messages/delete.
+  await page.locator('[data-detail="brickell:handled"]').click();
+  const pane = page.locator("aside.detail");
+  await expect(pane).toBeVisible();
+  await expect(page.locator("aside.detail .del").first()).toHaveAttribute("data-delete-sender", "brickell");
+
+  await page.locator("aside.detail .del").first().click();          // arm
+  await expect(page.locator("aside.detail .del.armed").first()).toContainText("Confirm");
+  await page.locator("aside.detail .del.armed").first().click();    // confirm
+
+  // Fake mode's deleteBySenderFn always returns matched: 3, trashed: 3 —
+  // canned, independent of how many ids the seeded cluster actually has.
+  await expect(page.locator(".notice")).toContainText("Moved 3 to Trash (3 matched)");
 });

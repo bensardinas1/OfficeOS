@@ -182,7 +182,7 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
     msgs = ordered.map(grp => {
       const ids = grp.members.map(m => m.emailId).filter(Boolean).join(",");
       const senderKey = (grp.from || "unknown").replace(/[^a-z0-9._@-]/gi, "_");
-      const delAll = confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, busy, disabled: !ids });
+      const delAll = confirmBtn({ cls: "del", attr: "data-delete-sender", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delall:cluster:${item.account}:${senderKey}`, verb: "delete all", confirm, busy, disabled: !grp.from });
       const killAll = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `kill:cluster:${item.account}:${senderKey}`, verb: "kill list", confirm, busy, disabled: !grp.from });
       const dkAll = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(grp.from || "")}"`, token: `delkill:cluster:${item.account}:${senderKey}`, verb: "Delete and Kill", confirm, busy, disabled: !ids || !grp.from });
       const sortedRows = grp.members.slice().sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));

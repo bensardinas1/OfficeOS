@@ -63,4 +63,9 @@ describe("panel render↔handler contract", () => {
     assert.match(app, /undoOf/, "app must send undoOf when undoing");
     assert.match(app, /emailIds\?\.\[0\]/, "app must reconcile server-backed keys (discriminator present)");
   });
+  it("app posts the intent-level /senders/delete-all for the cluster delete-all button", () => {
+    assert.match(render, /data-delete-sender/, "render must emit data-delete-sender");
+    assert.match(app, /\[data-delete-sender\]/, "app must select [data-delete-sender]");
+    assert.match(app, /\/senders\/delete-all/, "app must post /senders/delete-all");
+  });
 });

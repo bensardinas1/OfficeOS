@@ -364,7 +364,9 @@ describe("sender-clustered detail (handled/triage)", () => {
     const html = renderDetailPanel(handled, 0);
     assert.match(html, /Brickell Pay \(2\)/);
     assert.match(html, /Secureframe \(1\)/);
-    assert.match(html, /data-delete="brickellpay" data-ids="e1,e2"/);
+    assert.match(html, /data-delete-sender="brickellpay" data-ids="e1,e2" data-sender="noreply@brickellpay\.com"/);
+    assert.match(html, /data-token="delall:cluster:brickellpay:noreply@brickellpay\.com"/);
+    assert.doesNotMatch(html, /data-delete="brickellpay"/, "cluster delete-all must not emit the old data-delete attr");
     assert.match(html, /data-killlist="brickellpay" data-ids="e1,e2" data-sender="noreply@brickellpay.com"/);
     assert.match(html, /data-delkill="brickellpay"/);
     assert.doesNotMatch(html, /del:msg:e1/);

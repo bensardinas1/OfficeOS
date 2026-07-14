@@ -159,6 +159,22 @@ appEl.addEventListener("click", (e) => {
       } catch (err) { ui.notice = `Undo failed: ${err.message}`; draw(); }
     })();
   }
+  const dsa = e.target.closest("[data-delete-sender]");
+  if (dsa) {
+    const token = dsa.dataset.token, account = dsa.dataset.deleteSender, sender = dsa.dataset.sender, ids = (dsa.dataset.ids || "").split(",").filter(Boolean);
+    return void confirmThen(token, async () => {
+      ui.undo = null; ui.notice = null;
+      const r = await postJson("/senders/delete-all", { account, sender });
+      if (r.refused) { ui.notice = `Refused: ${r.refused}`; draw(); return; }
+      if (r.ok !== false) {
+        // Optimistically dim the rendered rows; the server-derived acted map
+        // (which covers ALL matched ids, rendered or not) reconciles on load().
+        for (const id of ids) ui.acted[id] = { deleted: true, account, emailIds: [id], deleteEntryId: r.entryId };
+      }
+      ui.notice = r.ok === false ? `Delete failed: ${r.error}` : `Moved ${r.trashed} to Trash (${r.matched} matched)`;
+      await load();
+    });
+  }
   const del = e.target.closest("[data-delete]");
   if (del) {
     const token = del.dataset.token, account = del.dataset.delete, ids = (del.dataset.ids || "").split(",").filter(Boolean);
