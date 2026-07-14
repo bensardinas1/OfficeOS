@@ -196,6 +196,9 @@ describe("deleteBySender", () => {
       'x@y.com" OR "z@w.com',
       "a@b@c.com",
       "spaces in@name.com",
+      "a@b.com,gmail.com",
+      "a@b.com|gmail.com",
+      "a@{b}.com",
     ]) {
       const r = await deleteBySender(acct, evil);
       assert.match(r.refused, /not a valid email/i, `should refuse: ${evil}`);

@@ -224,10 +224,12 @@ export async function fetchMessageBody(account, emailId) {
 const MATCH_CAP = 1000;
 
 // Strict single-address shape: rejects whitespace, colons, quotes, angle
-// brackets, parens, and multi-@ strings so no Gmail search operator (or OData
-// fragment) can ride in on the sender string. Validated BEFORE the guards so
-// a crafted string can't confuse isProtectedSender's domain split either.
-const EMAIL_SHAPE = /^[^\s@:'"<>()]+@[^\s@:'"<>()]+\.[^\s@:'"<>()]+$/;
+// brackets, parens, commas, pipes, braces, and multi-@ strings so no Gmail
+// search operator (documented or undocumented OR separator) or OData fragment
+// can ride in on the sender string. None of these characters appear in a real
+// sender address, so excluding them fails closed. Validated BEFORE the guards
+// so a crafted string can't confuse isProtectedSender's domain split either.
+const EMAIL_SHAPE = /^[^\s@:'"<>(),|{}]+@[^\s@:'"<>(),|{}]+\.[^\s@:'"<>(),|{}]+$/;
 
 export async function deleteBySender(account, sender, { sinceHours = 720, correspondents } = {}) {
   const email = String(sender || "").trim().toLowerCase();
