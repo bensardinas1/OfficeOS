@@ -74,5 +74,6 @@ describe("panel render↔handler contract", () => {
       assert.match(app, new RegExp(`\\[${attr}\\]`), `app must select [${attr}]`);
     }
     assert.match(app, /bulkBusy/, "app must drive the Working state");
+    assert.match(app, /failedIds/, "runBulk must respect per-id failures");
   });
 });

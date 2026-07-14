@@ -145,7 +145,8 @@ async function runBulk(action) {
         else {
           t.trashed += r.trashed || 0;
           t[op.unit === "conversation" ? "conversations" : "tiles"]++;
-          for (const id of op.emailIds) ui.acted[id] = { deleted: true, account: op.account, emailIds: [id], deleteEntryId: r.entryId };
+          const failed = new Set(r.failedIds || []);
+          for (const id of op.emailIds) if (!failed.has(id)) ui.acted[id] = { deleted: true, account: op.account, emailIds: [id], deleteEntryId: r.entryId };
         }
       } else if (op.kind === "deleteBySender") {
         const r = await postJson("/senders/delete-all", { account: op.account, sender: op.sender });
@@ -153,7 +154,8 @@ async function runBulk(action) {
         else if (r.ok === false) t.failed++;
         else {
           t.trashed += r.trashed || 0; t.senders++;
-          for (const id of op.optimisticIds) ui.acted[id] = { deleted: true, account: op.account, emailIds: [id], deleteEntryId: r.entryId };
+          const failed = new Set(r.failedIds || []);
+          for (const id of op.optimisticIds) if (!failed.has(id)) ui.acted[id] = { deleted: true, account: op.account, emailIds: [id], deleteEntryId: r.entryId };
         }
       } else if (op.kind === "kill") {
         const r = await postJson("/senders/killlist", { account: op.account, sender: op.sender, emailIds: op.emailIds });
@@ -164,13 +166,17 @@ async function runBulk(action) {
       } else if (op.kind === "restore") {
         const r = await postJson("/messages/restore", { account: op.account, emailIds: op.emailIds, undoOf: op.undoOf });
         if (r.ok === false) t.failed++;
-        else { t.restored += r.restored || 0; for (const id of op.emailIds) delete ui.acted[id]; }
+        else {
+          t.restored += r.restored || 0;
+          const failed = new Set(r.failedIds || []);
+          for (const id of op.emailIds) if (!failed.has(id)) delete ui.acted[id];
+        }
       } else if (op.kind === "killRemove") {
         const r = await postJson("/senders/killlist/remove", { account: op.account, sender: op.sender, undoOf: op.undoOf });
         if (r.ok === false || r.removed === false) t.failed++; else t.unkilled++;
       } else if (op.kind === "approve") {
-        await fetch(`/proposals/${encodeURIComponent(op.proposalId)}/approve`, { method: "POST" });
-        t.approved++;
+        const res = await fetch(`/proposals/${encodeURIComponent(op.proposalId)}/approve`, { method: "POST" });
+        if (res.ok) t.approved++; else t.failed++;
       }
     } catch (err) { aborted = `stopped after ${ui.bulkBusy.done}/${ui.bulkBusy.total}: ${err?.message || err}`; break; }
     ui.bulkBusy.done++;
