@@ -97,6 +97,34 @@ describe("deriveActed", () => {
     assert.equal(acted.w1, undefined);
   });
 
+  it("an errored restore does not neutralize its target", () => {
+    const erroredUndo = { id: "r9", at: "t", action: "restore", account: "b", emailIds: ["e1"], result: { error: "boom" }, undoOf: "d1" };
+    const acted = deriveActed([del, erroredUndo]);
+    assert.equal(acted.e1.deleted, true);        // target stays acted
+    assert.equal(acted.e2.deleted, true);
+  });
+
+  it("a refused kill-removal does not clear the killed flag", () => {
+    const refusedRemoval = { id: "kr1", at: "t", action: "killlist_remove", account: "b", sender: "spam@x.com", result: { removed: false, reason: "not on the kill-list" }, undoOf: "k1" };
+    const acted = deriveActed([del, kill, refusedRemoval]);
+    assert.equal(acted.e1.killed, true);
+    assert.equal(acted.e1.deleted, true);
+  });
+
+  it("a partially-failed restore neutralizes only the ids that actually restored", () => {
+    const partialUndo = { id: "r10", at: "t", action: "restore", account: "b", emailIds: ["e1", "e2"], result: { restored: 1, failed: 1, failedIds: ["e2"] }, undoOf: "d1" };
+    const acted = deriveActed([del, partialUndo]);
+    assert.equal(acted.e1, undefined);           // successfully restored — neutralized
+    assert.equal(acted.e2.deleted, true);        // failed to restore — stays acted
+  });
+
+  it("a zero-restore neutralizes nothing", () => {
+    const zeroUndo = { id: "r11", at: "t", action: "restore", account: "b", emailIds: ["e1"], result: { restored: 0, failed: 1, failedIds: ["e1"] }, undoOf: "d1" };
+    const acted = deriveActed([del, zeroUndo]);
+    assert.equal(acted.e1.deleted, true);
+    assert.equal(acted.e2.deleted, true);
+  });
+
   it("legacy entries without failedIds keep the old behavior", () => {
     const legacy = { id: "d5", at: "t", action: "delete", account: "b", emailIds: ["l1"], result: { trashed: 0, failed: 1 } };
     const acted = deriveActed([legacy]);

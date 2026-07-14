@@ -54,11 +54,15 @@ export function deriveActed(entries) {
   const undone = new Map();
   for (const e of entries) {
     if (!e.undoOf) continue;
+    if (e.result?.error) continue;                                        // errored undo — target stays acted
+    if (e.action === "killlist_remove" && e.result?.removed === false) continue; // refused removal
+    if (e.action === "restore" && e.result?.restored === 0) continue;     // nothing actually restored
     const cur = undone.get(e.undoOf);
     if (cur === "ALL") continue;
     if (!Array.isArray(e.emailIds) || e.emailIds.length === 0) { undone.set(e.undoOf, "ALL"); continue; }
+    const failed = new Set(Array.isArray(e.result?.failedIds) ? e.result.failedIds : []);
     const set = cur instanceof Set ? cur : new Set();
-    for (const id of e.emailIds) set.add(id);
+    for (const id of e.emailIds) { if (!failed.has(id)) set.add(id); }    // only successfully-restored ids neutralize
     undone.set(e.undoOf, set);
   }
   const acted = {};
