@@ -38,13 +38,42 @@ default `data/` + `config/` (used by e2e).
 temp data/config dirs, `OFFICEOS_FAKE_CONNECTORS=1` (canned connector results;
 never the default) — and walks delete → confirm → acted → undo → reload.
 
+## Mail connector library
+
+`scripts/mail.js` is the single library for all mail operations: fetch, delete,
+restore, fetch-body, and delete-by-sender. Every mail-touching path (CLI scripts,
+triage, morning-brief, the daemon) goes through it so pagination, provider dispatch
+(Outlook/Gmail), the unified email shape, and safety rails live in exactly one place.
+
+**Soft-delete only.** Outlook moves to `deleteditems`; Gmail trashes. Never permanent
+delete, never send. Client cache is per-account with Gmail account verification built
+in (a stale token for the wrong mailbox fails before any operation can proceed).
+
+CLI scripts (`fetch-emails.js`, `delete-emails.js`, `restore-emails.js`, etc.) are
+thin shims that invoke mail.js functions. The daemon calls mail.js in-process via
+`deleteFn`, `restoreFn`, `fetchBodyFn`, and `deleteBySenderFn`.
+
+**Delete-by-sender guards** (applied before any API call):
+- Strict email shape validation (rejects operator characters)
+- Protected senders + correspondents are refused
+- Inbox only; 30-day default window (sinceHours), clamped to [1h, 1y]
+- Match cap: 1000 emails per invocation
+- Audit entries carry `bySender` + the actual `emailIds` array so Undo works
+
 ## API (binds 127.0.0.1 only)
 
-- `GET  /health` — `{ ok, lastTickAt }`
+- `GET  /health` — `{ ok, lastTickAt, pid, startedAt }`
 - `GET  /model` — world model + proposals
+- `GET  /actions?days=7` — audit entries + derived acted map
 - `GET  /events` — SSE; emits `{type:"update"}` when a tick changes the model
+- `GET  /messages/:id/body?account=<id>` — fetch message body
 - `POST /proposals/:id/approve` — approve + execute (route → URL, draft_chase → drafts)
 - `POST /proposals/:id/dismiss` — dismiss
+- `POST /messages/delete` — soft-delete messages by ID
+- `POST /messages/restore` — restore messages from trash
+- `POST /senders/killlist` — add sender to kill-list (auto-delete future + optionally retroactive)
+- `POST /senders/killlist/remove` — remove sender from kill-list
+- `POST /senders/delete-all` — soft-delete all messages from a sender (bounded by sinceHours)
 
 ## Panel
 
