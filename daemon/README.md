@@ -106,7 +106,8 @@ Two-click confirm: first click arms a button to show "Confirm <verb>?", second e
 The bar shows "Working (k/n)…" with a progress counter during multi-batch operations and
 stays clickable above the open detail pane. An aggregate summary notice surfaces the
 outcome: deleted count (with breakdowns by sender/tile/conversation), kill-listed count,
-restored count, refusals (protected senders), and skipped items with reasons.
+restored count, un-kill-listed count, approved count, refusals (protected senders),
+failures, and skipped items with reasons.
 
 ### Semantics
 
@@ -118,7 +119,8 @@ restored count, refusals (protected senders), and skipped items with reasons.
 
 The panel's dim/strike and Undo state survives reloads and daemon restarts (backed by
 `data/actions.jsonl`). Note: the `conversationId` plumbing requires a daemon restart
-after the first triage run to populate conversation IDs.
+to take effect — the restarted daemon's first tick re-fetches mail with conversation
+IDs; until then the drill-in falls back to sender clusters.
 
 Dev preview without live email:
 
