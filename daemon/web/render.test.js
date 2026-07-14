@@ -24,6 +24,7 @@ describe("renderItemCard", () => {
     assert.match(html, /card_4821/);
     assert.match(html, /data-approve="brickell:owed_risk:card_4821::draft_chase"/);
     assert.match(html, /data-route="https:\/\/pay\.example\/portal"/);
+    assert.match(html, /data-select="item:brickell:owed_risk:card_4821"/);
   });
   it("escapes HTML in titles to prevent injection", () => {
     const evil = { ...item, title: "<img src=x onerror=alert(1)>", proposals: [], source: [] };

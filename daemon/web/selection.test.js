@@ -107,4 +107,22 @@ describe("resolveBulkPlan", () => {
     const p2 = resolveBulkPlan("approve", new Set(["item:b:gw", "conv:b:cv-1"]), view, {});
     assert.deepEqual(p2.ops, [{ kind: "approve", proposalId: "p1" }]);
   });
+
+  it("conv: excludes automated members sharing the conversation key (automated split)", () => {
+    const vAuto = { groups: [ { account: "b", items: [
+      { id: "b:handled2", account: "b", jobType: "handled", proposals: [], group: { members: [
+        mem("h1", "luis@x.com", "cv-1", false), mem("h2", "luis@x.com", "cv-1", false),
+        mem("a1", "auto@bulk.com", "cv-1", true),
+      ] } },
+    ] } ] };
+    const plan = resolveBulkPlan("delete", new Set(["conv:b:cv-1"]), vAuto);
+    assert.equal(plan.ops.length, 1);
+    assert.deepEqual(plan.ops[0].emailIds.sort(), ["h1", "h2"]);
+
+    const killPlan = resolveBulkPlan("kill", new Set(["conv:b:cv-1"]), vAuto);
+    assert.equal(killPlan.skips.length, 0);
+    assert.equal(killPlan.ops.length, 1);
+    assert.equal(killPlan.ops[0].sender, "luis@x.com");
+    assert.deepEqual(killPlan.ops[0].emailIds.sort(), ["h1", "h2"]);
+  });
 });

@@ -44,7 +44,7 @@ export function resolveBulkPlan(action, selectedKeys, view, acted = {}) {
       const convKey = rest.join(":");
       const members = items.filter(i => i.account === account && i.jobType === "handled")
         .flatMap(i => i.group?.members || [])
-        .filter(m => (m.conversationId || `msg:${m.emailId}`) === convKey);
+        .filter(m => m.automated === false && (m.conversationId || `msg:${m.emailId}`) === convKey);
       units.push({ type: "conversation", key: k, account, label: members[0]?.subject || convKey, members });
     }
   }
