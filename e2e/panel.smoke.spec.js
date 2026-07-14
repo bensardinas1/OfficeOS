@@ -40,12 +40,20 @@ function seed(dataDir) {
   const now = new Date().toISOString();
   const rowMembers = Array.from({ length: 12 }, (_, i) => ({
     subject: `[TEST] message ${i}`, from: "noise@example.com", fromName: "Noise Co",
-    emailId: `e${i}`, receivedAt: now,
+    emailId: `e${i}`, receivedAt: now, automated: true, conversationId: null,
   }));
   const clusterMembers = Array.from({ length: 3 }, (_, i) => ({
     subject: `[CLUSTER] message ${i}`, from: "bulk@example.com", fromName: "Bulk Co",
     emailId: `c${i}`, receivedAt: now,
   }));
+  // A 3-member human conversation (single provider conversationId, 3 distinct
+  // senders) — exercises the handled tile's "Conversations" section alongside
+  // its existing sender-cluster ("Bulk senders") section built from clusterMembers.
+  const conv = [
+    { subject: "Path Peptides underwriting", from: "luis@brickell.example", fromName: "Luis", emailId: "h0", receivedAt: now, conversationId: "cv-1", automated: false },
+    { subject: "RE: Path Peptides underwriting", from: "mckenna@partner.example", fromName: "McKenna", emailId: "h1", receivedAt: now, conversationId: "cv-1", automated: false },
+    { subject: "RE: Path Peptides underwriting", from: "boarding@partner.example", fromName: "Boarding", emailId: "h2", receivedAt: now, conversationId: "cv-1", automated: false },
+  ];
   writeFileSync(join(dataDir, "world-model.json"), JSON.stringify({
     generatedAt: now,
     accounts: { brickell: { status: "ok", lastTickAt: now, label: "Brickell", accountType: "business" } },
@@ -61,7 +69,7 @@ function seed(dataDir) {
         id: "brickell:handled", jobType: "handled", account: "brickell",
         title: "3 need a reply or decision", subtitle: "", status: "ok",
         display: { accountLabel: "Brickell" },
-        group: { rootCause: "handled", members: clusterMembers, moreCount: 0 },
+        group: { rootCause: "handled", members: [...clusterMembers, ...conv], moreCount: 0 },
         source: [], proposedActions: [], lastChanged: now,
       },
     ],
@@ -190,4 +198,55 @@ test("cluster delete-all posts the intent-level /senders/delete-all", async ({ p
   // Fake mode's deleteBySenderFn always returns matched: 3, trashed: 3 —
   // canned, independent of how many ids the seeded cluster actually has.
   await expect(page.locator(".notice")).toContainText("Moved 3 to Trash (3 matched)");
+});
+
+test("multi-sender conversation: one group, bulk delete + undo via the bar", async ({ page }) => {
+  await page.goto(base);
+
+  // The handled tile's detail pane splits into two sections: "Conversations"
+  // (human mail, grouped by provider conversationId — cv-1's 3 messages from
+  // 3 different senders render as ONE group) and "Bulk senders" (the existing
+  // clusterMembers, unaffected — see previous test).
+  await page.locator('[data-detail="brickell:handled"]').click();
+  const pane = page.locator("aside.detail");
+  await expect(pane).toBeVisible();
+  await expect(pane.locator(".convgrp")).toHaveCount(1);
+  await expect(pane.locator(".cghdr .cgname")).toContainText("Path Peptides underwriting");
+  await expect(pane.locator(".cghdr .cgmeta")).toContainText("3 messages · 3 senders");
+
+  // select the conversation → sticky bar appears. `selected` is app.js state,
+  // not DOM, so it survives the pane closing — and it must close: the modal
+  // `.backdrop` (z-index 10) sits above the fixed `.bulkbar` (z-index 9) and
+  // would intercept clicks meant for it, so dismiss the pane (Escape) before
+  // driving the bar, same as a real user would.
+  await pane.locator('[data-select="conv:brickell:cv-1"]').check();
+  await page.keyboard.press("Escape");
+  const bar = page.locator(".bulkbar");
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText("1 selected");
+
+  // two-click bulk delete
+  await bar.locator("[data-bulk-delete]").click();
+  await expect(bar.locator("[data-bulk-delete]")).toContainText("Confirm");
+  await bar.locator("[data-bulk-delete]").click();
+  await expect(page.locator(".notice")).toContainText(/Deleted 3 \(1 conversation\)/);
+
+  // rows acted; survives reload (real ids h0..h2 → server-derived)
+  await page.locator('[data-detail="brickell:handled"]').click();
+  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(3);
+  await page.reload();
+  await page.locator('[data-detail="brickell:handled"]').click();
+  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(3);
+
+  // bulk undo the same conversation
+  await page.locator('aside.detail [data-select="conv:brickell:cv-1"]').check();
+  await page.keyboard.press("Escape");
+  await page.locator(".bulkbar [data-bulk-undo]").click();
+  await page.locator(".bulkbar [data-bulk-undo]").click();
+  await expect(page.locator(".notice")).toContainText(/restored 3/);
+  await page.locator('[data-detail="brickell:handled"]').click();
+  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(0);
+  await page.reload();
+  await page.locator('[data-detail="brickell:handled"]').click();
+  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(0);
 });
