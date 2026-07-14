@@ -100,7 +100,7 @@ export function renderItemCard(item, nowMs = Date.now(), opts = {}) {
   const delBtn = ids
     ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(ids)}"`, token: `del:tile:${item.id}`, verb: "delete", confirm, busy })
     : "";
-  const killBtn = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(senders[0] || "")}"`, token: `kill:tile:${item.id}`, verb: "kill list", confirm, busy, disabled: senders.length !== 1 });
+  const killBtn = confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(senders[0] || "")}"`, token: `kill:tile:${item.id}`, verb: "kill list", confirm, busy, disabled: senders.length !== 1 });
   const delkillBtn = confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(ids)}" data-sender="${esc(senders[0] || "")}"`, token: `delkill:tile:${item.id}`, verb: "Delete and Kill", confirm, busy, disabled: !ids || senders.length !== 1 });
 
   const when = relativeTime(d.latestDate, nowMs);
@@ -234,7 +234,7 @@ export function renderDetailPanel(item, nowMs = Date.now(), opts = {}) {
       const when = relativeTime(m.receivedAt, nowMs);
       const ma = acted[m.emailId];
       const rowDel = m.emailId ? confirmBtn({ cls: "del", attr: "data-delete", value: item.account, extra: ` data-ids="${esc(m.emailId)}"`, token: `del:msg:${m.emailId}`, verb: "delete", confirm, busy }) : "";
-      const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm, busy }) : "";
+      const rowKill = m.from ? confirmBtn({ cls: "kill", attr: "data-killlist", value: item.account, extra: ` data-ids="${esc(m.emailId || "")}" data-sender="${esc(m.from)}"`, token: `kill:msg:${m.emailId || m.from}`, verb: "kill list", confirm, busy }) : "";
       const rowDelkill = (m.emailId && m.from) ? confirmBtn({ cls: "delkill", attr: "data-delkill", value: item.account, extra: ` data-ids="${esc(m.emailId)}" data-sender="${esc(m.from)}"`, token: `delkill:msg:${m.emailId}`, verb: "Delete and Kill", confirm, busy }) : "";
       const rowActions = ma
         ? `<span class="actedtag">${esc(actedBadge(ma))}</span><button class="undo" data-undo-acted="${esc(m.emailId)}">Undo</button>`

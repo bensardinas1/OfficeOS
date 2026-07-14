@@ -269,6 +269,9 @@ describe("acted state + delete-and-kill", () => {
     assert.match(renderItemCard(gw, 0), /data-delkill="brickell"/);
     assert.match(renderItemCard(gw, 0), /Delete and Kill/);
   });
+  it("renders a Kill button on a card with data-ids for server-derivable state", () => {
+    assert.match(renderItemCard(gw, 0), /data-killlist="brickell"[^>]*data-ids="e1"/);
+  });
   it("dims an acted tile with a badge + Undo instead of action buttons", () => {
     const html = renderItemCard(gw, 0, { acted: { "brickell:gateway:nmi:1": { deleted: true, killed: true } } });
     assert.match(html, /class="card[^"]*acted/);
@@ -375,6 +378,11 @@ describe("sender-clustered detail (handled/triage)", () => {
     const gw = { id: "brickellpay:gateway:nmi:1", account: "brickellpay", jobType: "gateway", title: "T", status: "at_risk",
       group: { rootCause: "r", members: [{ subject: "s", emailId: "e1", from: "support@nmi.com", fromName: "NMI" }] }, display: {}, source: [], proposals: [] };
     assert.match(renderDetailPanel(gw, 0), /del:msg:e1/);
+  });
+  it("renders per-row kill buttons with data-ids in flat detail branch", () => {
+    const gw = { id: "brickellpay:gateway:nmi:1", account: "brickellpay", jobType: "gateway", title: "T", status: "at_risk",
+      group: { rootCause: "r", members: [{ subject: "s", emailId: "e1", from: "support@nmi.com", fromName: "NMI" }] }, display: {}, source: [], proposals: [] };
+    assert.match(renderDetailPanel(gw, 0), /data-killlist="brickellpay"[^>]*data-ids="e1"/);
   });
 
   const convHandled = {
