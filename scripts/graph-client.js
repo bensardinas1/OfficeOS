@@ -57,34 +57,37 @@ export async function buildGraphClient(companyId, extraScopes = []) {
 
   const scopes = ["Mail.Read", "Mail.ReadWrite", "Mail.Send", "User.Read", "offline_access", ...extraScopes];
 
-  // Try silent auth from cache first
-  let accessToken = null;
-  const accounts = await msalApp.getTokenCache().getAllAccounts();
-
-  if (accounts.length > 0) {
-    try {
-      const result = await msalApp.acquireTokenSilent({ scopes, account: accounts[0] });
-      accessToken = result.accessToken;
-    } catch {
-      // Cache miss or expired — fall through to device flow
-    }
+  // Access tokens live ~75 minutes; MSAL refreshes them via the offline_access
+  // refresh token, but only when asked. Silent-only — a long-lived daemon must
+  // never block a Graph request on an interactive device-code prompt.
+  async function acquireSilent() {
+    const accounts = await msalApp.getTokenCache().getAllAccounts();
+    if (accounts.length === 0) throw new Error("No cached account");
+    const result = await msalApp.acquireTokenSilent({ scopes, account: accounts[0] });
+    return result.accessToken;
   }
 
-  // Device flow if no cached token
-  if (!accessToken) {
+  // Establish a session up front: silent from cache, else interactive device
+  // flow (the one place a human is expected to be present).
+  try {
+    await acquireSilent();
+  } catch {
     const result = await msalApp.acquireTokenByDeviceCode({
       scopes,
       deviceCodeCallback: (response) => {
         console.log("\n" + response.message + "\n");
       },
     });
-    accessToken = result.accessToken;
+    if (!result?.accessToken) throw new Error("Failed to acquire access token");
   }
 
-  if (!accessToken) throw new Error("Failed to acquire access token");
-
   const client = Client.init({
-    authProvider: (done) => done(null, accessToken),
+    authProvider: (done) => {
+      acquireSilent().then(
+        (token) => done(null, token),
+        (err) => done(err, null),
+      );
+    },
   });
 
   return client;
