@@ -31,7 +31,12 @@ export function normalizeHandled(classified, account, typeConfig, opts = {}) {
     } else {
       waiting += emails.length;
     }
-    for (const e of emails) all.push({ subject: e.subject, from: e.from, fromName: e.fromName, receivedAt: e.receivedAt || e.received, emailId: e.id });
+    for (const e of emails) all.push({
+      subject: e.subject, from: e.from, fromName: e.fromName,
+      receivedAt: e.receivedAt || e.received, emailId: e.id,
+      conversationId: e.conversationId || null,
+      automated: looksAutomated(e.from, e.hasListUnsubscribe),
+    });
   }
   all.sort((a, b) => String(b.receivedAt || "").localeCompare(String(a.receivedAt || "")));
   const CAP = 50;

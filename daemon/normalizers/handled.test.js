@@ -88,4 +88,18 @@ describe("normalizeHandled", () => {
     assert.equal(it0.group.members.length, 3);
     assert.match(it0.title, /1 needs a reply or decision/);
   });
+
+  it("stamps conversationId and automated on every member", () => {
+    const classified = { categories: {
+      action: { emails: [ { id: "h1", from: "wayne@brickellpay.com", subject: "decision?", receivedAt: "2026-06-20T00:00:00Z", conversationId: "cv-9" } ] },
+      fyi:    { emails: [ { id: "n1", from: "noreply@brickellpay.com", subject: "alert", receivedAt: "2026-06-20T00:00:00Z", hasListUnsubscribe: true } ] },
+    } };
+    const it0 = normalizeHandled(classified, account, typeConfig)[0];
+    const h = it0.group.members.find(m => m.emailId === "h1");
+    const n = it0.group.members.find(m => m.emailId === "n1");
+    assert.equal(h.conversationId, "cv-9");
+    assert.equal(h.automated, false);
+    assert.equal(n.conversationId, null);
+    assert.equal(n.automated, true);
+  });
 });
