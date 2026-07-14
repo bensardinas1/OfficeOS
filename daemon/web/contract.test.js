@@ -68,4 +68,11 @@ describe("panel render↔handler contract", () => {
     assert.match(app, /\[data-delete-sender\]/, "app must select [data-delete-sender]");
     assert.match(app, /\/senders\/delete-all/, "app must post /senders/delete-all");
   });
+  it("app wires the bulk bar to resolveBulkPlan and the endpoints", () => {
+    assert.match(app, /resolveBulkPlan/, "app must import/use resolveBulkPlan");
+    for (const attr of ["data-bulk-delete", "data-bulk-kill", "data-bulk-delkill", "data-bulk-undo", "data-bulk-clear"]) {
+      assert.match(app, new RegExp(`\\[${attr}\\]`), `app must select [${attr}]`);
+    }
+    assert.match(app, /bulkBusy/, "app must drive the Working state");
+  });
 });

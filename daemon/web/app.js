@@ -3,9 +3,9 @@
  * render.js, live-reloads on SSE /events, posts actions, and drives the collapse,
  * slide-in detail, undo, two-click-confirm, and notice UI. No business logic here.
  */
-import { toPanelView, filterItems, filterGroups, findItem } from "./view-model.js";
+import { toPanelView, filterGroups, findItem } from "./view-model.js";
 import { renderHeader, renderAccountSection, renderDetailPanel, renderBulkBar, renderUndoBar, renderNoticeBar, renderRunTriage, esc } from "./render.js";
-import { toggle, pendingApprovalsFor } from "./selection.js";
+import { toggle, resolveBulkPlan } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
@@ -122,6 +122,83 @@ function markActed(token, key, ids, patch) {
   }
 }
 
+// Sequential bulk executor. Ops come from the pure resolveBulkPlan; every op's
+// outcome is tallied — refusals, failures, and skips surface in one aggregate
+// notice, and a thrown op aborts the remainder with a "stopped after k/n" note.
+async function runBulk(action) {
+  const view = toPanelView(lastModel);
+  const plan = resolveBulkPlan(action, selected, view, ui.acted);
+  ui.undo = null; ui.notice = null;
+  if (plan.ops.length === 0) {
+    ui.notice = plan.skips.length ? `Nothing to do · ${plan.skips.length} skipped (${plan.skips[0].reason})` : "Nothing to do";
+    draw(); return;
+  }
+  ui.bulkBusy = { done: 0, total: plan.ops.length };
+  draw();
+  const t = { trashed: 0, senders: 0, tiles: 0, conversations: 0, killed: 0, restored: 0, unkilled: 0, refused: 0, failed: 0, approved: 0 };
+  let aborted = null;
+  for (const op of plan.ops) {
+    try {
+      if (op.kind === "delete") {
+        const r = await postJson("/messages/delete", { account: op.account, emailIds: op.emailIds });
+        if (r.ok === false) t.failed++;
+        else {
+          t.trashed += r.trashed || 0;
+          t[op.unit === "conversation" ? "conversations" : "tiles"]++;
+          for (const id of op.emailIds) ui.acted[id] = { deleted: true, account: op.account, emailIds: [id], deleteEntryId: r.entryId };
+        }
+      } else if (op.kind === "deleteBySender") {
+        const r = await postJson("/senders/delete-all", { account: op.account, sender: op.sender });
+        if (r.refused) t.refused++;
+        else if (r.ok === false) t.failed++;
+        else {
+          t.trashed += r.trashed || 0; t.senders++;
+          for (const id of op.optimisticIds) ui.acted[id] = { deleted: true, account: op.account, emailIds: [id], deleteEntryId: r.entryId };
+        }
+      } else if (op.kind === "kill") {
+        const r = await postJson("/senders/killlist", { account: op.account, sender: op.sender, emailIds: op.emailIds });
+        if (r.added) {
+          t.killed++;
+          for (const id of op.emailIds) ui.acted[id] = { ...(ui.acted[id] || {}), killed: true, account: op.account, emailIds: [id], sender: op.sender, killEntryId: r.entryId };
+        } else t.refused++;
+      } else if (op.kind === "restore") {
+        const r = await postJson("/messages/restore", { account: op.account, emailIds: op.emailIds, undoOf: op.undoOf });
+        if (r.ok === false) t.failed++;
+        else { t.restored += r.restored || 0; for (const id of op.emailIds) delete ui.acted[id]; }
+      } else if (op.kind === "killRemove") {
+        const r = await postJson("/senders/killlist/remove", { account: op.account, sender: op.sender, undoOf: op.undoOf });
+        if (r.ok === false || r.removed === false) t.failed++; else t.unkilled++;
+      } else if (op.kind === "approve") {
+        await fetch(`/proposals/${encodeURIComponent(op.proposalId)}/approve`, { method: "POST" });
+        t.approved++;
+      }
+    } catch (err) { aborted = `stopped after ${ui.bulkBusy.done}/${ui.bulkBusy.total}: ${err?.message || err}`; break; }
+    ui.bulkBusy.done++;
+    draw();
+  }
+  const plural = (n, s) => `${n} ${s}${n === 1 ? "" : "s"}`;
+  const parts = [];
+  if (t.trashed) {
+    const u = [];
+    if (t.senders) u.push(plural(t.senders, "sender"));
+    if (t.tiles) u.push(plural(t.tiles, "tile"));
+    if (t.conversations) u.push(plural(t.conversations, "conversation"));
+    parts.push(`Deleted ${t.trashed}${u.length ? ` (${u.join(", ")})` : ""}`);
+  }
+  if (t.killed) parts.push(`kill-listed ${t.killed}`);
+  if (t.restored) parts.push(`restored ${t.restored}`);
+  if (t.unkilled) parts.push(`un-kill-listed ${t.unkilled}`);
+  if (t.approved) parts.push(`approved ${t.approved}`);
+  if (t.refused) parts.push(`${t.refused} refused (protected)`);
+  if (t.failed) parts.push(`${t.failed} failed`);
+  if (plan.skips.length) parts.push(`${plan.skips.length} skipped (${plan.skips[0].reason}${plan.skips.length > 1 ? ", …" : ""})`);
+  if (aborted) parts.push(aborted);
+  ui.notice = parts.join(" · ") || "Nothing to do";
+  selected = new Set();
+  ui.bulkBusy = null;
+  await load();
+}
+
 function fillBody(el, v) {
   el.textContent = v.error ? `⚠ ${v.error}` : (v.text || "(empty)");
 }
@@ -201,6 +278,15 @@ appEl.addEventListener("click", (e) => {
       await load();
     });
   }
+  const bAct = e.target.closest("[data-bulk-delete],[data-bulk-kill],[data-bulk-delkill],[data-bulk-undo]");
+  if (bAct) {
+    if (ui.bulkBusy) return;
+    const ds = bAct.dataset;
+    const action = "bulkDelete" in ds ? "delete" : "bulkKill" in ds ? "kill" : "bulkDelkill" in ds ? "delkill" : "undo";
+    return void confirmThen(ds.token, () => runBulk(action));
+  }
+  const bClear = e.target.closest("[data-bulk-clear]");
+  if (bClear) { selected = new Set(); ui.confirm = null; draw(); return; }
   const lb = e.target.closest("[data-loadbody]");
   if (lb) {
     const id = lb.dataset.loadbody;
@@ -257,10 +343,7 @@ appEl.addEventListener("click", (e) => {
   const bulk = e.target.closest("[data-bulk-approve]");
   if (bulk) {
     ui.undo = null;
-    const view = toPanelView(lastModel);
-    const ids = pendingApprovalsFor(filterItems(view, ui), selected);
-    selected = new Set();
-    return void (async () => { for (const id of ids) await fetch(`/proposals/${encodeURIComponent(id)}/approve`, { method: "POST" }); await load(); })();
+    return void runBulk("approve");
   }
 });
 
