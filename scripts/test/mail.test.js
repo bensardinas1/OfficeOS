@@ -120,3 +120,53 @@ describe("stripHtml", () => {
     assert.equal(stripHtml("<style>x{}</style><p>a  <b>b</b></p>"), "a b");
   });
 });
+
+import { deleteEmails, restoreEmails, fetchMessageBody } from "../mail.js";
+
+describe("deleteEmails / restoreEmails", () => {
+  it("outlook: per-id move to deleteditems, collecting failed ids", async () => {
+    const calls = [];
+    const client = { api: (url) => ({ post: async (b) => {
+      calls.push({ url, b });
+      if (url.includes("bad")) throw new Error("boom");
+      return {};
+    }, select: () => ({ get: async () => ({}) }) }) };
+    _setClientFactoryForTest(async () => client);
+    const r = await deleteEmails(outlookAcct, ["ok1", "bad2", "ok3"]);
+    assert.deepEqual(r, { trashed: 2, failed: 1, failedIds: ["bad2"] });
+    assert.equal(calls[0].b.destinationId, "deleteditems");
+  });
+
+  it("gmail: trash / untrash per id", async () => {
+    const trashed = [], untrashed = [];
+    _setClientFactoryForTest(async () => ({ users: { messages: {
+      trash: async ({ id }) => { if (id === "x") throw new Error("no"); trashed.push(id); },
+      untrash: async ({ id }) => { untrashed.push(id); },
+    } } }));
+    const d = await deleteEmails(gmailAcct, ["a", "x"]);
+    assert.deepEqual(d, { trashed: 1, failed: 1, failedIds: ["x"] });
+    const u = await restoreEmails(gmailAcct, ["a"]);
+    assert.deepEqual(u, { restored: 1, failed: 0, failedIds: [] });
+  });
+
+  it("outlook restore moves back to inbox", async () => {
+    let posted;
+    _setClientFactoryForTest(async () => ({ api: () => ({ post: async (b) => { posted = b; return {}; } }) }));
+    const r = await restoreEmails(outlookAcct, ["m1"]);
+    assert.equal(r.restored, 1);
+    assert.equal(posted.destinationId, "inbox");
+  });
+});
+
+describe("fetchMessageBody", () => {
+  it("outlook: strips html body", async () => {
+    process.env.BRICKELL_EMAIL = "me@brickell.com";
+    _setClientFactoryForTest(async () => ({ api: () => ({ select: () => ({ get: async () => ({ id: "m1", body: { content: "<p>hi</p>" } }) }) }) }));
+    assert.deepEqual(await fetchMessageBody(outlookAcct, "m1"), { id: "m1", body: "hi" });
+  });
+  it("gmail: extracts from payload", async () => {
+    const data = { id: "g1", payload: { mimeType: "text/plain", body: { data: Buffer.from("yo").toString("base64") } } };
+    _setClientFactoryForTest(async () => ({ users: { messages: { get: async () => ({ data }) } } }));
+    assert.deepEqual(await fetchMessageBody(gmailAcct, "g1"), { id: "g1", body: "yo" });
+  });
+});

@@ -9,33 +9,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripHtml } from "./fetch-emails.js";
+import { extractGmailBody, stripHtml } from "./mail.js";
 import "dotenv/config";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/**
- * Pure: best-effort plain text from a Gmail message payload. Prefers text/plain,
- * then stripped text/html, then a top-level body; recurses into multipart parts.
- */
-export function extractGmailBody(payload) {
-  if (!payload) return "";
-  const decode = (data) =>
-    Buffer.from(String(data || "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
-  let plain = "", html = "";
-  const walk = (p) => {
-    if (!p) return;
-    const mt = p.mimeType || "";
-    if (mt === "text/plain" && p.body?.data && !plain) plain = decode(p.body.data);
-    else if (mt === "text/html" && p.body?.data && !html) html = decode(p.body.data);
-    for (const c of p.parts || []) walk(c);
-  };
-  walk(payload);
-  if (plain) return plain.trim();
-  if (html) return stripHtml(html);
-  if (payload.body?.data) return decode(payload.body.data).trim();
-  return "";
-}
+// Re-export extractGmailBody for any callers that import from fetch-message.js
+export { extractGmailBody };
 
 async function outlookBody(accountId, messageId) {
   const { buildGraphClient } = await import("./graph-client.js");

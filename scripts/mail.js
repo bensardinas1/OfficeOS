@@ -152,3 +152,66 @@ export async function fetchMail(account, { hours = 24, folder = "inbox", max = 2
       .get(), max);
   return messages.map(m => mapOutlookMessage(m, bodyChars));
 }
+
+// ---------------------------------------------------------------------------
+// Mutations — soft-delete / restore only. Per-id so one bad id can't sink a batch.
+// ---------------------------------------------------------------------------
+async function perId(ids, fn) {
+  let ok = 0; const failedIds = [];
+  for (const id of ids) {
+    try { await fn(id); ok++; } catch { failedIds.push(id); }
+  }
+  return { ok, failedIds };
+}
+
+export async function deleteEmails(account, ids) {
+  const client = await getClient(account);
+  const gmail = (account.provider || "outlook") === "gmail";
+  const { ok, failedIds } = await perId(ids, (id) => gmail
+    ? client.users.messages.trash({ userId: "me", id })
+    : client.api(`/me/messages/${id}/move`).post({ destinationId: "deleteditems" }));
+  return { trashed: ok, failed: failedIds.length, failedIds };
+}
+
+export async function restoreEmails(account, ids) {
+  const client = await getClient(account);
+  const gmail = (account.provider || "outlook") === "gmail";
+  const { ok, failedIds } = await perId(ids, (id) => gmail
+    ? client.users.messages.untrash({ userId: "me", id })
+    : client.api(`/me/messages/${id}/move`).post({ destinationId: "inbox" }));
+  return { restored: ok, failed: failedIds.length, failedIds };
+}
+
+// ---------------------------------------------------------------------------
+// Single message body (read-only)
+// ---------------------------------------------------------------------------
+export function extractGmailBody(payload) {
+  if (!payload) return "";
+  const decode = (data) =>
+    Buffer.from(String(data || "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+  let plain = "", html = "";
+  const walk = (p) => {
+    if (!p) return;
+    const mt = p.mimeType || "";
+    if (mt === "text/plain" && p.body?.data && !plain) plain = decode(p.body.data);
+    else if (mt === "text/html" && p.body?.data && !html) html = decode(p.body.data);
+    for (const c of p.parts || []) walk(c);
+  };
+  walk(payload);
+  if (plain) return plain.trim();
+  if (html) return stripHtml(html);
+  if (payload.body?.data) return decode(payload.body.data).trim();
+  return "";
+}
+
+export async function fetchMessageBody(account, emailId) {
+  const client = await getClient(account);
+  if ((account.provider || "outlook") === "gmail") {
+    const res = await client.users.messages.get({ userId: "me", id: emailId, format: "full" });
+    return { id: res.data.id, body: extractGmailBody(res.data.payload) };
+  }
+  const email = process.env[`${account.id.toUpperCase()}_EMAIL`] || account.myEmail;
+  const path = email ? `/users/${email}/messages/${emailId}` : `/me/messages/${emailId}`;
+  const msg = await client.api(path).select("id,body").get();
+  return { id: msg.id, body: stripHtml(msg.body?.content || "") };
+}
