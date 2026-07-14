@@ -10,6 +10,7 @@ export function makeFakeConnectors() {
     restoreFn: async (account, ids) => ({ restored: ids.length, failed: 0 }),
     killlistFn: async (account, sender) => ({ added: true, value: sender }),
     killlistRemoveFn: async (account, sender) => ({ removed: true }),
+    deleteBySenderFn: async (account, sender) => ({ matched: 3, trashed: 3, failed: 0, failedIds: [], emailIds: ["f1", "f2", "f3"] }),
     runTriageFn: async () => ({ ok: true }),
     fetchBodyFn: async (account, emailId) => ({ id: emailId, body: `demo body for ${emailId}` }),
     fetchFn: async () => { throw new Error("fake mode: no live fetch"); },

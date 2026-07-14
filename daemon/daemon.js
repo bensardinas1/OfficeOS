@@ -20,6 +20,10 @@ import { makeReasonerFn } from "./claude-reasoner.js";
 import { createLogger } from "./log.js";
 import { createActionLog } from "./action-log.js";
 import { makeFakeConnectors } from "./fake-connectors.js";
+import { fetchMail, deleteEmails, restoreEmails, fetchMessageBody, deleteBySender } from "../scripts/mail.js";
+import { applyKillListAdd } from "../scripts/killlist-add.js";
+import { applyKillListRemove } from "../scripts/killlist-remove.js";
+import { loadCorrespondentsFile, correspondentSet } from "../scripts/correspondents.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_PORT = 8138;
@@ -55,16 +59,6 @@ function runProcess(cmd, args, { input = null, timeoutMs = 0, maxBuffer = 50 * 1
   });
 }
 
-async function fetchSubprocess(companies, accountId, folder, hours) {
-  const account = companies.companies.find(c => c.id === accountId);
-  const script = account.provider === "gmail" ? "fetch-gmail.js" : "fetch-emails.js";
-  const base = [join(root, "scripts", script), accountId, String(hours), folder];
-  const args = account.provider === "gmail" ? base : [...base, "500", "4000"];
-  const r = await runProcess("node", args);
-  if (r.status !== 0) throw new Error(r.stderr || `fetch failed for ${accountId}/${folder}`);
-  return JSON.parse(r.stdout);
-}
-
 async function runClaude(prompt) {
   // timeout bounds the blast radius if `claude` hangs (e.g. waiting on auth);
   // the timeout kills + rejects → makeReasonerFn catches it → regroup keeps
@@ -82,59 +76,6 @@ function makeSaveDraftFn(account) {
     if (r.status !== 0) throw new Error(r.stderr || `save-draft failed for ${accountId}`);
     return JSON.parse(r.stdout);
   };
-}
-
-async function fetchBody(accountId, emailId) {
-  const r = await runProcess("node", [join(root, "scripts", "fetch-message.js"), accountId, emailId], { timeoutMs: 20000 });
-  if (r.status !== 0) throw new Error(r.stderr || `fetch-message failed for ${accountId}`);
-  return JSON.parse(r.stdout);
-}
-
-function makeDeleteFn(companies) {
-  // Chunk ids so argv never overflows on Windows (~8k char limit); sum results.
-  return async (accountId, ids) => {
-    const account = companies.companies.find(c => c.id === accountId);
-    const script = account?.provider === "gmail" ? "delete-gmail-emails.js" : "delete-emails.js";
-    let trashed = 0, failed = 0;
-    for (let i = 0; i < ids.length; i += 20) {
-      const chunk = ids.slice(i, i + 20);
-      const r = await runProcess("node", [join(root, "scripts", script), accountId, ...chunk]);
-      if (r.status !== 0) throw new Error(r.stderr || `delete failed for ${accountId}`);
-      const m = /Done:\s*(\d+) trashed(?:,\s*(\d+) failed)?/.exec(r.stdout);
-      trashed += m ? Number(m[1]) : 0;
-      failed += m && m[2] ? Number(m[2]) : 0;
-    }
-    return { trashed, failed };
-  };
-}
-
-async function killlistFn(accountId, sender) {
-  const r = await runProcess("node", [join(root, "scripts", "killlist-add.js"), accountId], { input: JSON.stringify({ sender }) });
-  if (r.status !== 0) throw new Error(r.stderr || `killlist-add failed for ${accountId}`);
-  return JSON.parse(r.stdout);
-}
-
-function makeRestoreFn(companies) {
-  return async (accountId, ids) => {
-    const account = companies.companies.find(c => c.id === accountId);
-    const script = account?.provider === "gmail" ? "restore-gmail-emails.js" : "restore-emails.js";
-    let restored = 0, failed = 0;
-    for (let i = 0; i < ids.length; i += 20) {
-      const chunk = ids.slice(i, i + 20);
-      const r = await runProcess("node", [join(root, "scripts", script), accountId, ...chunk]);
-      if (r.status !== 0) throw new Error(r.stderr || `restore failed for ${accountId}`);
-      const m = /Done:\s*(\d+) restored(?:,\s*(\d+) failed)?/.exec(r.stdout);
-      restored += m ? Number(m[1]) : 0;
-      failed += m && m[2] ? Number(m[2]) : 0;
-    }
-    return { restored, failed };
-  };
-}
-
-async function killlistRemoveFn(accountId, sender) {
-  const r = await runProcess("node", [join(root, "scripts", "killlist-remove.js"), accountId], { input: JSON.stringify({ sender }) });
-  if (r.status !== 0) throw new Error(r.stderr || `killlist-remove failed for ${accountId}`);
-  return JSON.parse(r.stdout);
 }
 
 function getPendingDeletions(dataDir) {
@@ -179,10 +120,27 @@ async function main() {
 
   const { classify } = await import("../scripts/classify-emails.js");
 
+  const acctById = new Map(companies.companies.map(a => [a.id, a]));
+  const acct = (id) => { const a = acctById.get(id); if (!a) throw new Error(`unknown account: ${id}`); return a; };
+  const correspondentsFor = (id) => {
+    try { return correspondentSet(loadCorrespondentsFile(join(dataDir, "correspondents.json")), id); }
+    catch { return undefined; }
+  };
   const real = {
-    deleteFn: makeDeleteFn(companies), restoreFn: makeRestoreFn(companies),
-    killlistFn, killlistRemoveFn, runTriageFn, fetchBodyFn: fetchBody,
-    fetchFn: (accountId, folder, hours) => fetchSubprocess(companies, accountId, folder, hours),
+    fetchFn: (accountId, folder, hours) => {
+      const a = acct(accountId);
+      return a.provider === "gmail"
+        ? fetchMail(a, { hours, max: 100 })
+        : fetchMail(a, { hours, folder, max: 500, bodyChars: 4000 });
+    },
+    deleteFn: (accountId, ids) => deleteEmails(acct(accountId), ids),
+    restoreFn: (accountId, ids) => restoreEmails(acct(accountId), ids),
+    fetchBodyFn: (accountId, emailId) => fetchMessageBody(acct(accountId), emailId),
+    deleteBySenderFn: (accountId, sender, opts = {}) =>
+      deleteBySender(acct(accountId), sender, { ...opts, correspondents: correspondentsFor(accountId) }),
+    killlistFn: async (accountId, sender) => applyKillListAdd(configDir, accountId, sender, { correspondentsPath: join(dataDir, "correspondents.json") }),
+    killlistRemoveFn: async (accountId, sender) => applyKillListRemove(configDir, accountId, sender),
+    runTriageFn,
   };
   const conn = chooseConnectors(process.env, real, makeFakeConnectors());
 
@@ -218,7 +176,8 @@ async function main() {
     clock: { now: () => new Date().toISOString() }, accounts: companies.companies,
     fetchBodyFn: conn.fetchBodyFn, deleteFn: conn.deleteFn, killlistFn: conn.killlistFn,
     runTriageFn: conn.runTriageFn, onTriage: () => tick(), restoreFn: conn.restoreFn,
-    killlistRemoveFn: conn.killlistRemoveFn, actionLog, startedAt,
+    killlistRemoveFn: conn.killlistRemoveFn, deleteBySenderFn: conn.deleteBySenderFn,
+    actionLog, startedAt,
   });
 
   server.on("error", (err) => {

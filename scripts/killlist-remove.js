@@ -5,6 +5,10 @@
  * killlist-add). Config write ONLY — never sends or deletes mail.
  * Prints { removed: bool, reason: string|null }.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWrite } from "./fs-utils.js";
+
 export function removeSenderFromKillList(cfg, accountId, sender) {
   const email = String(sender || "").trim().toLowerCase();
   const company = (cfg.companies || []).find(c => c.id === accountId);
@@ -17,11 +21,21 @@ export function removeSenderFromKillList(cfg, accountId, sender) {
   return { cfg, removed: true, reason: null };
 }
 
+/**
+ * Full-cycle: load companies.json from configDir (NOT repo root), apply the
+ * kill-list removal, and atomically persist only when it actually changed.
+ */
+export async function applyKillListRemove(configDir, accountId, sender) {
+  const cfgPath = join(configDir, "companies.json");
+  const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+  const r = removeSenderFromKillList(cfg, accountId, sender);
+  if (r.removed) atomicWrite(cfgPath, JSON.stringify(cfg, null, 2));
+  return { removed: r.removed, reason: r.reason };
+}
+
 if (process.argv[1] && process.argv[1].endsWith("killlist-remove.js")) {
-  const { readFileSync } = await import("node:fs");
-  const { dirname, join } = await import("node:path");
+  const { dirname } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
-  const { atomicWrite } = await import("./fs-utils.js");
   const accountId = process.argv[2];
   if (!accountId) { console.error("Usage: node scripts/killlist-remove.js <accountId>  (sender JSON on stdin)"); process.exit(1); }
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -30,9 +44,6 @@ if (process.argv[1] && process.argv[1].endsWith("killlist-remove.js")) {
   for await (const chunk of process.stdin) input += chunk;
   let sender;
   try { sender = JSON.parse(input).sender; } catch { console.error("stdin must be JSON { sender }"); process.exit(1); }
-  const cfgPath = join(root, "config/companies.json");
-  const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
-  const r = removeSenderFromKillList(cfg, accountId, sender);
-  if (r.removed) atomicWrite(cfgPath, JSON.stringify(cfg, null, 2));
-  process.stdout.write(JSON.stringify({ removed: r.removed, reason: r.reason }));
+  const r = await applyKillListRemove(join(root, "config"), accountId, sender);
+  process.stdout.write(JSON.stringify(r));
 }
