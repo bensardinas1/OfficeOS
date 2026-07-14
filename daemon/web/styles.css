@@ -22,7 +22,10 @@ button, .route { font:inherit; border-radius:8px; padding:6px 12px; border:1px s
 .route { background:#23314a; color:var(--accent); }
 .dismiss { background:transparent; color:#8a94a6; }
 .empty { color:#8a94a6; padding:24px; text-align:center; }
-.bulkbar { position:fixed; left:0; right:0; bottom:0; z-index:9; display:flex; gap:10px; align-items:center; padding:10px 16px; background:#111a2e; border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(0,0,0,.4); }
+/* z-index 12 keeps the bar clickable above the detail pane's backdrop (10) and
+   the pane itself (11) — conv/cluster checkboxes only exist inside the pane, so
+   the check-then-bulk-act flow must work with the pane open. */
+.bulkbar { position:fixed; left:0; right:0; bottom:0; z-index:12; display:flex; gap:10px; align-items:center; padding:10px 16px; background:#111a2e; border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(0,0,0,.4); }
 .bulkbar .bulkcount { color:var(--txt); font-size:13px; margin-right:6px; }
 .bulk-approve { background:#1f3a2a; color:var(--ok); }
 .bulk-clear { background:transparent; color:#8a94a6; }
@@ -46,7 +49,7 @@ button, .route { font:inherit; border-radius:8px; padding:6px 12px; border:1px s
 .acct .list { margin-top:10px; }
 button.detail { background:transparent; color:#8a94a6; }
 .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:10; }
-aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(560px,94vw); background:var(--card); border-left:1px solid var(--line); box-shadow:-8px 0 24px rgba(0,0,0,.35); z-index:11; padding:18px; overflow-y:auto; }
+aside.detail { position:fixed; top:0; right:0; height:100vh; width:min(560px,94vw); background:var(--card); border-left:1px solid var(--line); box-shadow:-8px 0 24px rgba(0,0,0,.35); z-index:11; padding:18px; padding-bottom:64px; overflow-y:auto; }
 .detail-close { position:absolute; top:12px; right:12px; background:transparent; color:#8a94a6; border:none; font-size:16px; cursor:pointer; }
 .detail .dtitle { font-weight:700; font-size:17px; margin:0 24px 12px 0; }
 .detail .drow { display:flex; gap:10px; padding:3px 0; font-size:13px; }

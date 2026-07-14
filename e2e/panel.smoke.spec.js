@@ -214,37 +214,32 @@ test("multi-sender conversation: one group, bulk delete + undo via the bar", asy
   await expect(pane.locator(".cghdr .cgname")).toContainText("Path Peptides underwriting");
   await expect(pane.locator(".cghdr .cgmeta")).toContainText("3 messages · 3 senders");
 
-  // select the conversation → sticky bar appears. `selected` is app.js state,
-  // not DOM, so it survives the pane closing — and it must close: the modal
-  // `.backdrop` (z-index 10) sits above the fixed `.bulkbar` (z-index 9) and
-  // would intercept clicks meant for it, so dismiss the pane (Escape) before
-  // driving the bar, same as a real user would.
+  // select the conversation → sticky bar appears. The bar (z-index 12) sits
+  // ABOVE the pane's backdrop (10) and the pane itself (11), so the validated
+  // flow is fully in-pane: check the box, then drive the bar directly while
+  // the detail pane stays open throughout.
   await pane.locator('[data-select="conv:brickell:cv-1"]').check();
-  await page.keyboard.press("Escape");
   const bar = page.locator(".bulkbar");
   await expect(bar).toBeVisible();
   await expect(bar).toContainText("1 selected");
 
-  // two-click bulk delete
+  // two-click bulk delete, pane still open
   await bar.locator("[data-bulk-delete]").click();
   await expect(bar.locator("[data-bulk-delete]")).toContainText("Confirm");
   await bar.locator("[data-bulk-delete]").click();
   await expect(page.locator(".notice")).toContainText(/Deleted 3 \(1 conversation\)/);
 
-  // rows acted; survives reload (real ids h0..h2 → server-derived)
-  await page.locator('[data-detail="brickell:handled"]').click();
-  await expect(page.locator("aside.detail .msg.acted")).toHaveCount(3);
+  // rows acted in the open pane; survives reload (real ids h0..h2 → server-derived)
+  await expect(pane.locator(".msg.acted")).toHaveCount(3);
   await page.reload();
   await page.locator('[data-detail="brickell:handled"]').click();
   await expect(page.locator("aside.detail .msg.acted")).toHaveCount(3);
 
-  // bulk undo the same conversation
+  // bulk undo the same conversation — again with the pane open
   await page.locator('aside.detail [data-select="conv:brickell:cv-1"]').check();
-  await page.keyboard.press("Escape");
   await page.locator(".bulkbar [data-bulk-undo]").click();
   await page.locator(".bulkbar [data-bulk-undo]").click();
   await expect(page.locator(".notice")).toContainText(/restored 3/);
-  await page.locator('[data-detail="brickell:handled"]').click();
   await expect(page.locator("aside.detail .msg.acted")).toHaveCount(0);
   await page.reload();
   await page.locator('[data-detail="brickell:handled"]').click();
