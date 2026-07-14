@@ -14,36 +14,10 @@
  */
 
 import { buildGraphClient } from "./graph-client.js";
+import { stripHtml } from "./mail.js";
 import "dotenv/config";
 
-/**
- * Converts HTML email body content to plain text.
- * Removes <style> and <script> blocks, strips all tags,
- * decodes common HTML entities, and collapses whitespace.
- *
- * @param {string|null|undefined} html
- * @returns {string}
- */
-export function stripHtml(html) {
-  if (!html) return "";
-  return html
-    // Remove <style>...</style> blocks (including multiline)
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    // Remove <script>...</script> blocks (including multiline)
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    // Strip all remaining HTML tags
-    .replace(/<[^>]+>/g, " ")
-    // Decode common HTML entities
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    // Collapse all whitespace (spaces, tabs, newlines) to a single space
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export { stripHtml } from "./mail.js";
 
 // CLI entrypoint — guarded so the module can be imported for tests without
 // executing the fetch (Windows-safe: checks the resolved script path).
