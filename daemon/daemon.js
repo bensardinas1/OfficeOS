@@ -24,6 +24,7 @@ import { fetchMail, deleteEmails, restoreEmails, fetchMessageBody, deleteBySende
 import { applyKillListAdd } from "../scripts/killlist-add.js";
 import { applyKillListRemove } from "../scripts/killlist-remove.js";
 import { loadCorrespondentsFile, correspondentSet } from "../scripts/correspondents.js";
+import { validateConfig } from "../scripts/validate-config.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_PORT = 8138;
@@ -118,6 +119,27 @@ async function main() {
   const actionLog = createActionLog(dataDir);
   let lastTickAt = null;
 
+  // Config findings: revalidated every tick (kill-list writes mutate
+  // companies.json at runtime), logged only when the finding set changes.
+  let configFindings = [];
+  let lastFindingsKey = null;
+  function refreshConfigFindings() {
+    try {
+      const cfg = loadConfig(configDir);
+      configFindings = validateConfig(cfg.companies, cfg.accountTypes);
+    } catch (e) {
+      configFindings = [{ level: "error", path: "config", message: `config unreadable: ${e.message}` }];
+    }
+    const key = JSON.stringify(configFindings);
+    const prevKey = lastFindingsKey;
+    lastFindingsKey = key;
+    if (key !== prevKey && (configFindings.length || prevKey !== null)) {
+      logger.log(configFindings.length ? "warn" : "info", "config-findings",
+        { count: configFindings.length, findings: configFindings });
+    }
+  }
+  refreshConfigFindings();
+
   const { classify } = await import("../scripts/classify-emails.js");
 
   const acctById = new Map(companies.companies.map(a => [a.id, a]));
@@ -155,11 +177,13 @@ async function main() {
     reasonerFn: makeReasonerFn(runClaude),
     getAcks: () => ackStore.getAcks(),
     getPendingDeletions: () => getPendingDeletions(dataDir),
+    getConfigFindings: () => configFindings,
   });
 
   if (once) {
     const t0 = Date.now();
     try {
+      refreshConfigFindings();
       const summary = await runTick(deps(() => {}));
       logger.log("info", "tick-end", { ms: Date.now() - t0, items: summary.itemCount, changed: summary.changed, warnings: summary.warnings });
       process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
@@ -191,6 +215,7 @@ async function main() {
   async function tick() {
     const t0 = Date.now();
     try {
+      refreshConfigFindings();
       const summary = await runTick(deps((e) => {
         server.broadcastUpdate(e);
         if (e?.notify && process.env.OFFICEOS_FAKE_CONNECTORS !== "1") notify(e.notify); // fire-and-forget; never throws; suppressed in fake mode

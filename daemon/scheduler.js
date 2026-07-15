@@ -67,7 +67,8 @@ export async function runTick(deps) {
   const acks = deps.getAcks ? deps.getAcks() : {};
   nextItems = applyAcks(nextItems, acks);
 
-  const nextModel = { generatedAt: clock.now, accounts: accountsState, items: nextItems };
+  const configFindings = deps.getConfigFindings ? deps.getConfigFindings() : [];
+  const nextModel = { generatedAt: clock.now, accounts: accountsState, items: nextItems, configFindings };
 
   // newAtRisk: items at_risk now that were absent or not-at_risk before
   const newAtRisk = nextItems.filter(i =>
@@ -83,7 +84,8 @@ export async function runTick(deps) {
 
   // diff: compare item sets ignoring lastChanged timestamps
   const norm = (m) => JSON.stringify(m.items.map(i => ({ ...i, lastChanged: null })));
-  const changed = norm(prev) !== norm(nextModel);
+  const changed = norm(prev) !== norm(nextModel)
+    || JSON.stringify(prev.configFindings || []) !== JSON.stringify(configFindings);
 
   store.saveModel(nextModel);
   store.saveQueue(queue);

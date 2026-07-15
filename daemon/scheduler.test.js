@@ -148,3 +148,36 @@ describe("runTick", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe("config findings on the model", () => {
+  const findings = [{ level: "error", path: "companies[x].provider", message: "bad" }];
+
+  it("stamps deps.getConfigFindings() onto the saved model", async () => {
+    const dir = tmp();
+    try {
+      const d = deps(dir, { getConfigFindings: () => findings });
+      await runTick(d);
+      assert.deepEqual(d.store.getModel().configFindings, findings);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("defaults configFindings to [] when the dep is absent", async () => {
+    const dir = tmp();
+    try {
+      const d = deps(dir);
+      await runTick(d);
+      assert.deepEqual(d.store.getModel().configFindings, []);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("a findings change alone flips `changed` (same items)", async () => {
+    const dir = tmp();
+    try {
+      await runTick(deps(dir)); // seed: no findings
+      const again = await runTick(deps(dir)); // same emails, still no findings
+      assert.equal(again.changed, false);
+      const withFindings = await runTick(deps(dir, { getConfigFindings: () => findings }));
+      assert.equal(withFindings.changed, true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
