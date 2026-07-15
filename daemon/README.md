@@ -40,7 +40,7 @@ never the default) — and walks delete → confirm → acted → undo → reloa
 
 ## Restart requirement
 
-Changes to the fetch layer, email normalizer, or message classifier require a daemon restart to take effect. These components load at daemon startup and run during each tick to populate the world model; code changes in `scripts/mail.js` (and the `scripts/fetch-*.js` shims), `daemon/normalizers/`, or `scripts/classify-emails.js` do not hot-reload. Panel files (`daemon/web/*`) only need a browser reload. Restart by stopping the daemon (Ctrl+C) and running `node daemon/daemon.js` again, or by restarting the scheduled task (`pwsh scripts/install-daemon-task.ps1 -Start`).
+Changes to the fetch layer, email normalizer, or message classifier require a daemon restart to take effect. These components load at daemon startup and run during each tick to populate the world model; code changes in `scripts/mail.js` (and the `scripts/fetch-*.js` shims), `daemon/normalizers/`, or `scripts/classify-emails.js` do not hot-reload. Panel files (`daemon/web/*`) only need a browser reload. When supervised by the Scheduled Task (windowless — there is no console to Ctrl+C), restart with `Stop-ScheduledTask -TaskName "OfficeOS Daemon"; Start-ScheduledTask -TaskName "OfficeOS Daemon"`. Running manually instead: Ctrl+C, then `node daemon/daemon.js`.
 
 ## Mail connector library
 

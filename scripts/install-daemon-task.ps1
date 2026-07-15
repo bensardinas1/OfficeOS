@@ -6,10 +6,17 @@ Run from any location; the repo root is derived from this script's path.
   pwsh scripts/install-daemon-task.ps1 -Start     # install and start now
   pwsh scripts/install-daemon-task.ps1 -Uninstall # remove the task
 
-The task runs `node daemon\daemon.js` at your logon, in your user session
-(OneDrive paths, Graph token caches, and toasts all work), and restarts it
-every minute on failure. The daemon's EADDRINUSE singleton guard makes
-restart loops safe (a second instance exits 0 immediately).
+The task runs the daemon at your logon, in your user session (OneDrive paths,
+Graph token caches, and toasts all work), and restarts it every minute on
+failure. The daemon's EADDRINUSE singleton guard makes restart loops safe
+(a second instance exits 0 immediately).
+
+The daemon is launched through scripts\start-daemon-hidden.vbs (wscript.exe)
+so it gets NO console window: a visible console invites closing it, which
+SIGINTs the daemon — a clean exit the restart policy deliberately ignores.
+The wrapper waits on node and exits with node's code, so crashes still
+trigger the restart policy. To stop the daemon on purpose:
+  Stop-ScheduledTask -TaskName "OfficeOS Daemon"
 #>
 param([switch]$Uninstall, [switch]$Start)
 
@@ -23,8 +30,10 @@ if ($Uninstall) {
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $node = (Get-Command node -ErrorAction Stop).Source
+$wrapper = Join-Path $PSScriptRoot "start-daemon-hidden.vbs"
+if (-not (Test-Path $wrapper)) { throw "missing $wrapper" }
 
-$action   = New-ScheduledTaskAction -Execute $node -Argument "daemon\daemon.js" -WorkingDirectory $repo
+$action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$wrapper`" `"$repo`" `"$node`"" -WorkingDirectory $repo
 $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet `
   -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
