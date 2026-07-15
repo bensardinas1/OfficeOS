@@ -27,6 +27,9 @@ that. Diagnosis against live data found four stacked mechanisms:
   simple own-address exclusion, not sent-items correlation.
 - Fix the urgency matcher to word-boundary semantics AND curate per-account flag
   lists (curation is a live `config/companies.json` edit — never committed).
+- Urgency flags are **scoped to senders with standing** (correspondents,
+  prioritySenders, own domain) — cold outreach cannot keyword itself into
+  "needs a reply". Chosen over unscoped flags and over a first-touch exception.
 - Config validator runs warn-and-continue: daemon starts, findings logged and
   surfaced as a panel warning strip; malformed rules are skipped, valid ones apply.
 
@@ -91,6 +94,34 @@ new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, "i")
   applied at both ends.
 - Same function everywhere — triage category routing and account-level urgency
   routing both improve. This is a deliberate global semantics change (approved).
+
+### Flag scoping — flags only promote senders with standing
+
+Rationale: a genuine marketing blast is stopped by the bulk-signal gate before
+flags run, but cold outreach from a plain mailbox ("Call me about your
+underwriting", no List-Unsubscribe, addressed To: you) scores below the bulk
+threshold and would keyword itself into action. Flags therefore only fire when
+the sender has **standing**:
+
+```
+senderHasStanding(email, account, correspondents) -> bool
+```
+
+true when any of (all case-insensitive):
+- sender's address is in the account's correspondents set (sent-mail derived —
+  already loaded by `classify()`),
+- sender matches the account's `prioritySenders` (existing `matchesSender`),
+- sender's domain equals `account.myEmail`'s domain.
+
+In `classifyEmail`, the account-level urgency-flag step (step 4) requires
+`senderHasStanding` before routing to action/respond. Category-level
+`urgencyRules` (rich category overrides, step 4 of the override loop) get the
+same standing gate — same reasoning, same mechanism. Senders without standing
+fall through to the account-type default (`fyi` for business) and count as
+informational, never needsYou. `classifyEmail` gains a `correspondents`
+parameter (already available at the `classify()` call site; tests pass a Set).
+Note: prioritySenders continue to route to action *directly* (step 3) — the
+standing gate changes nothing for them; it only gates keyword promotion.
 
 ### Flag curation (live config edit, applied during implementation, not committed)
 
@@ -179,6 +210,9 @@ suspicious but functional):
 - `matchesUrgencyFlags`: boundary semantics ("need" vs "needed", "hold" vs
   "shareholder"), phrase flags with irregular whitespace, regex-special
   characters in flags, case-insensitivity.
+- `senderHasStanding` + gating: correspondent hit, prioritySender hit, own-domain
+  hit, stranger with flagged keywords lands in fyi (account-level AND
+  category-level paths), prioritySender direct routing unaffected by the gate.
 - `looksAutomated`: domain-prefix hits (notification., welcome.), non-marketing
   domains unaffected, existing local-part/List-Unsubscribe behavior preserved;
   `detectBulkSignals` still fires marketing-subdomain via the shared list.
