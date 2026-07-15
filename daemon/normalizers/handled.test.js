@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeHandled } from "./handled.js";
+import { normalizeHandled, countConversations } from "./handled.js";
 
 const account = { id: "brickell" };
 const typeConfig = { triageCategories: [
@@ -26,7 +26,7 @@ describe("normalizeHandled", () => {
     assert.equal(it0.id, "brickell:handled");
     assert.equal(it0.jobType, "handled");
     assert.equal(it0.status, "ok");
-    assert.equal(it0.title, "2 need a reply or decision");
+    assert.equal(it0.title, "2 conversations need a reply");
     assert.equal(it0.subtitle, "+ 4 informational");
     assert.doesNotMatch(it0.title, /need you|waiting/); // no collision with the header's "N need you"
   });
@@ -46,7 +46,7 @@ describe("normalizeHandled", () => {
 
   it("uses singular 'needs' for a single actionable item, and carries counts in group", () => {
     const items = normalizeHandled(classifiedWith({ action: 1, fyi: 2 }), account, typeConfig);
-    assert.equal(items[0].title, "1 needs a reply or decision");
+    assert.equal(items[0].title, "1 conversation needs a reply");
     assert.equal(items[0].group.rootCause, "handled");
     assert.deepEqual(items[0].group.counts, { needsYou: 1, waiting: 2 });
   });
@@ -86,7 +86,7 @@ describe("normalizeHandled", () => {
     assert.equal(it0.group.counts.needsYou, 1);
     assert.equal(it0.group.counts.waiting, 2);
     assert.equal(it0.group.members.length, 3);
-    assert.match(it0.title, /1 needs a reply or decision/);
+    assert.match(it0.title, /1 conversation needs a reply/);
   });
 
   it("stamps conversationId and automated on every member", () => {
@@ -101,5 +101,82 @@ describe("normalizeHandled", () => {
     assert.equal(h.automated, false);
     assert.equal(n.conversationId, null);
     assert.equal(n.automated, true);
+  });
+});
+
+describe("countConversations", () => {
+  const me = "me@corp.com";
+  const m = (id, from, receivedAt, extra = {}) => ({ id, from, receivedAt, ...extra });
+
+  it("counts a thread once regardless of message volume", () => {
+    const emails = [
+      m("a1", "client@x.com", "2026-07-01T10:00:00Z", { conversationId: "cv1" }),
+      m("a2", "client@x.com", "2026-07-01T11:00:00Z", { conversationId: "cv1" }),
+      m("a3", "client@x.com", "2026-07-01T12:00:00Z", { conversationId: "cv1" }),
+    ];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 1, waiting: 0 });
+  });
+
+  it("a thread where I had the last (human) word is waiting, not needsYou", () => {
+    const emails = [
+      m("a1", "client@x.com", "2026-07-01T10:00:00Z", { conversationId: "cv1" }),
+      m("a2", "me@corp.com", "2026-07-01T12:00:00Z", { conversationId: "cv1" }),
+    ];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 0, waiting: 1 });
+  });
+
+  it("an automated message after my reply does not flip the thread back", () => {
+    const emails = [
+      m("a1", "client@x.com", "2026-07-01T10:00:00Z", { conversationId: "cv1" }),
+      m("a2", "me@corp.com", "2026-07-01T12:00:00Z", { conversationId: "cv1" }),
+      m("a3", "noreply@x.com", "2026-07-01T13:00:00Z", { conversationId: "cv1" }),
+    ];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 0, waiting: 1 });
+  });
+
+  it("my own solo mail never needs me", () => {
+    const emails = [m("a1", "ME@corp.com", "2026-07-01T10:00:00Z")];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 0, waiting: 1 });
+  });
+
+  it("automated-only conversations are waiting", () => {
+    const emails = [
+      m("a1", "noreply@x.com", "2026-07-01T10:00:00Z", { conversationId: "cv1" }),
+      m("a2", "b@y.com", "2026-07-01T10:00:00Z", { hasListUnsubscribe: true, conversationId: "cv2" }),
+    ];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 0, waiting: 2 });
+  });
+
+  it("missing conversationId falls back to per-email singletons", () => {
+    const emails = [m("a1", "x@a.com", "2026-07-01T10:00:00Z"), m("a2", "y@b.com", "2026-07-01T10:00:00Z")];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 2, waiting: 0 });
+  });
+
+  it("tolerates missing receivedAt and missing myEmail", () => {
+    const emails = [m("a1", "x@a.com", undefined, { conversationId: "cv1" }), m("a2", "me@corp.com", undefined, { conversationId: "cv1" })];
+    const r = countConversations(emails, undefined);
+    assert.equal(r.needsYou + r.waiting, 1); // one conversation, counted exactly once
+  });
+
+  it("supports the legacy `received` field for ordering", () => {
+    const emails = [
+      { id: "a1", from: "client@x.com", received: "2026-07-01T10:00:00Z", conversationId: "cv1" },
+      { id: "a2", from: "me@corp.com", received: "2026-07-02T10:00:00Z", conversationId: "cv1" },
+    ];
+    assert.deepEqual(countConversations(emails, me), { needsYou: 0, waiting: 1 });
+  });
+});
+
+describe("normalizeHandled — conversation-aware integration", () => {
+  it("a multi-message thread I answered last counts zero; a fresh thread counts one", () => {
+    const classified = { categories: { action: { emails: [
+      { id: "t1a", from: "client@x.com", receivedAt: "2026-07-01T10:00:00Z", conversationId: "cvA" },
+      { id: "t1b", from: "me@corp.com", receivedAt: "2026-07-01T12:00:00Z", conversationId: "cvA" },
+      { id: "t2a", from: "other@y.com", receivedAt: "2026-07-01T11:00:00Z", conversationId: "cvB" },
+    ] } } };
+    const it0 = normalizeHandled(classified, { id: "biz", myEmail: "me@corp.com" }, typeConfig)[0];
+    assert.deepEqual(it0.group.counts, { needsYou: 1, waiting: 1 });
+    assert.equal(it0.title, "1 conversation needs a reply");
+    assert.equal(it0.subtitle, "+ 1 informational");
   });
 });
