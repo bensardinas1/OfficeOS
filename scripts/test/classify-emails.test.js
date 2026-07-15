@@ -105,6 +105,50 @@ describe("matchesUrgencyFlags", () => {
   });
 });
 
+describe("matchesUrgencyFlags — word-boundary semantics", () => {
+  const mail = (subject, preview = "") => ({ subject, preview });
+
+  it("matches a flag as a whole word", () => {
+    assert.equal(matchesUrgencyFlags(mail("We need this today"), ["need"]), true);
+    assert.equal(matchesUrgencyFlags(mail("Everything you needed"), ["need"]), false);
+    assert.equal(matchesUrgencyFlags(mail("kneading dough"), ["need"]), false);
+  });
+
+  it("does not fire inside larger words (hold/shareholder, audit/auditorium)", () => {
+    assert.equal(matchesUrgencyFlags(mail("shareholder update"), ["hold"]), false);
+    assert.equal(matchesUrgencyFlags(mail("visit the auditorium"), ["audit"]), false);
+    assert.equal(matchesUrgencyFlags(mail("account on hold"), ["hold"]), true);
+  });
+
+  it("treats punctuation and string edges as boundaries", () => {
+    assert.equal(matchesUrgencyFlags(mail("Urgent: reply now"), ["urgent"]), true);
+    assert.equal(matchesUrgencyFlags(mail("need-by date attached"), ["need"]), true);
+    assert.equal(matchesUrgencyFlags(mail("need"), ["need"]), true);
+  });
+
+  it("matches multi-word flags as phrases across whitespace runs", () => {
+    assert.equal(matchesUrgencyFlags(mail("please  call me back"), ["call me"]), true);
+    assert.equal(matchesUrgencyFlags(mail("we recall memos"), ["call me"]), false);
+    assert.equal(matchesUrgencyFlags(mail("ACH   hold placed"), ["ACH hold"]), true);
+  });
+
+  it("is case-insensitive in both directions", () => {
+    assert.equal(matchesUrgencyFlags(mail("URGENT REPLY"), ["urgent"]), true);
+    assert.equal(matchesUrgencyFlags(mail("please review the LOI"), ["Please Review"]), true);
+  });
+
+  it("escapes regex-special characters in flags", () => {
+    assert.equal(matchesUrgencyFlags(mail("cost is $1.5M (final)"), ["$1.5m (final)"]), true);
+    assert.equal(matchesUrgencyFlags(mail("cost is 1x5M"), ["$1.5m (final)"]), false);
+  });
+
+  it("checks preview text too, and ignores empty/whitespace flags", () => {
+    assert.equal(matchesUrgencyFlags(mail("hi", "deadline is friday"), ["deadline"]), true);
+    assert.equal(matchesUrgencyFlags(mail("anything at all"), [""]), false);
+    assert.equal(matchesUrgencyFlags(mail("anything at all"), ["   "]), false);
+  });
+});
+
 describe("classifyEmail — business account", () => {
   const categories = resolveCategories(businessTypeConfig, businessAccount);
   const downrankList = resolveDownrank(businessTypeConfig, businessAccount);

@@ -121,9 +121,27 @@ export function matchesDeletionPattern(email, patterns) {
   return patterns.some(pattern => text.includes(pattern.toLowerCase()));
 }
 
+// A flag matches as a whole word/phrase: "need" fires on "we need this" and
+// "need-by date" but not "needed" or "kneading"; multi-word flags match as
+// phrases across any whitespace run. Boundary = anything that isn't [a-z0-9].
+const FLAG_REGEX_CACHE = new Map();
+function urgencyFlagRegex(flag) {
+  if (FLAG_REGEX_CACHE.has(flag)) return FLAG_REGEX_CACHE.get(flag);
+  const words = String(flag).trim().split(/\s+/).filter(Boolean)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = words.length
+    ? new RegExp(`(?<![a-z0-9])(?:${words.join("\\s+")})(?![a-z0-9])`, "i")
+    : null; // empty/whitespace flag matches nothing
+  FLAG_REGEX_CACHE.set(flag, re);
+  return re;
+}
+
 export function matchesUrgencyFlags(email, flags) {
-  const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
-  return flags.some(flag => text.includes(flag.toLowerCase()));
+  const text = `${email.subject || ""} ${email.preview || ""}`;
+  return flags.some(flag => {
+    const re = urgencyFlagRegex(flag);
+    return re ? re.test(text) : false;
+  });
 }
 
 const MARKETING_SUBDOMAINS = ["mail.", "email.", "news.", "marketing.", "updates.", "info.", "noreply."];
