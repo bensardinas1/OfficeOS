@@ -57,6 +57,7 @@ export function matchesSender(email, senders) {
   const text = `${email.subject || ""} ${email.preview || ""}`.toLowerCase();
 
   for (const sender of senders) {
+    if (!sender || typeof sender.value !== "string") continue; // malformed rule — validator reports it; runtime skips it
     if (sender.type === "domain") {
       const domain = fromEmail.split("@")[1];
       if (domain === sender.value.toLowerCase()) return true;

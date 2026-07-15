@@ -719,3 +719,13 @@ describe("detectBulkSignals uses the shared MARKETING_SUBDOMAINS list", () => {
     assert.ok(signals.includes("marketing-subdomain"));
   });
 });
+
+describe("matchesSender — malformed rules are skipped, never thrown", () => {
+  const email = { from: "jane@vendor.com", fromName: "Jane", subject: "hi", preview: "" };
+  it("ignores rules with missing or non-string values", () => {
+    assert.equal(matchesSender(email, [{ type: "domain" }, { type: "email", value: 42 }, null]), false);
+  });
+  it("still matches valid rules that follow a malformed one", () => {
+    assert.equal(matchesSender(email, [{ type: "domain" }, { type: "domain", value: "vendor.com" }]), true);
+  });
+});
