@@ -38,6 +38,10 @@ default `data/` + `config/` (used by e2e).
 temp data/config dirs, `OFFICEOS_FAKE_CONNECTORS=1` (canned connector results;
 never the default) — and walks delete → confirm → acted → undo → reload.
 
+## Restart requirement
+
+Changes to the fetch layer, email normalizer, or message classifier require a daemon restart to take effect. These components run at startup and during each tick to populate the world model; code changes in `daemon/fetch/`, `daemon/normalize/`, or `daemon/classify/` do not hot-reload. Restart by stopping the daemon (Ctrl+C) and running `node daemon/daemon.js` again, or by restarting the scheduled task (`pwsh scripts/install-daemon-task.ps1 -Start`).
+
 ## Mail connector library
 
 `scripts/mail.js` is the single library for all mail operations: fetch, delete,
@@ -97,6 +101,8 @@ triage), the pane shows two sections:
 - **Bulk senders**: automated mail clustered by sender, each cluster showing individual
   messages and action buttons
 
+**"Needs a reply" semantics**: A conversation needs your reply if its newest human message is not from you. Your own last message marks a thread handled. Automated mail (List-Unsubscribe headers, automated local-parts like `noreply@`, or marketing subdomains like `notification.`, `welcome.`) is never counted as needing a reply. Urgency keywords in subject/body only promote senders with standing (prior correspondents, priority senders, or your own domain).
+
 Click the checkbox on a card, sender-cluster header, or conversation header to select it
 (typed keys: `item:<itemId>`, `cluster:<account>:<sender>`, `conv:<account>:<conversationId>`).
 The sticky bulk bar appears at the bottom with the count and action buttons: **Approve** ·
@@ -139,6 +145,10 @@ node daemon/daemon.js      # then open http://localhost:8138/
 - `config/account-types.json` → `<type>.jobTypes.exposed.recognizers` (defenderCloud, defenderEndpoint,
   pciTamper, entra — sender domains/hints, subject markers, portal URLs) + `atRiskSeverities`.
 - `config/companies.json` → per account: `links.billing_portal`, optional `pollMinutes`.
+
+### Config validation
+
+The daemon validates configuration at startup and on every tick. Validation findings (malformed rules, missing fields, conflicts) are attached to `GET /model` as `configFindings: [{level, path, message}]` and surfaced in the panel as an expandable `⚠ config: N issue(s)` strip. Findings are logged as `config-findings` events in `data/daemon.log`, but only when the finding set changes (deduped by content). Validation is warn-and-continue — malformed rules are skipped by the classifier and the daemon never refuses to start over config issues.
 
 ## Gateway (processing incidents)
 
