@@ -6,6 +6,7 @@ import {
   matchesSender,
   matchesDownrank,
   matchesUrgencyFlags,
+  senderHasStanding,
   classifyEmail,
   applyNoiseFilter,
   detectBulkSignals,
@@ -163,8 +164,13 @@ describe("classifyEmail — business account", () => {
     assert.equal(cat, "action");
   });
 
-  it("classifies urgency flag email as action", () => {
-    const cat = classifyEmail(emails.withUrgencyFlag, businessAccount, businessTypeConfig, categories, downrankList);
+  it("classifies urgency flag email as action (sender has standing via correspondents)", () => {
+    // withUrgencyFlag's sender (processor@bank.com) is neither a prioritySender
+    // nor on the account's own domain, so it needs standing from somewhere else
+    // to keep exercising the account-level urgency-flag branch rather than
+    // short-circuiting on the prioritySenders check above it.
+    const correspondents = new Set(["processor@bank.com"]);
+    const cat = classifyEmail(emails.withUrgencyFlag, businessAccount, businessTypeConfig, categories, downrankList, correspondents);
     assert.equal(cat, "action");
   });
 
@@ -645,5 +651,64 @@ describe("classify — explicit vs heuristic deletion tagging", () => {
     const r = classifyWithAccount(emails, account, typeConfig);
     assert.equal(r.explicitDeletions.length, 0);
     assert.equal(r.heuristicDeletions.length, 0);
+  });
+});
+
+describe("senderHasStanding — keyword promotion requires standing", () => {
+  const account = {
+    id: "biz", accountType: "business", myEmail: "me@mycorp.com",
+    prioritySenders: [{ type: "domain", value: "partner.com" }],
+    urgencyRules: { flags: ["call me", "underwriting"] },
+  };
+  const typeConfig = { triageCategories: [
+    { id: "action", label: "Action", actionable: true },
+    { id: "fyi", label: "FYI" },
+  ] };
+  const categories = resolveCategories(typeConfig, account);
+  const downrank = resolveDownrank(typeConfig, account);
+  const flagged = (from) => ({
+    from, fromName: "Someone", subject: "call me about your underwriting",
+    preview: "", toRecipients: "me@mycorp.com",
+  });
+
+  it("grants standing to correspondents, prioritySenders, and own domain", () => {
+    assert.equal(senderHasStanding(flagged("known@vendor.com"), account, new Set(["known@vendor.com"])), true);
+    assert.equal(senderHasStanding(flagged("anyone@partner.com"), account, new Set()), true);
+    assert.equal(senderHasStanding(flagged("colleague@mycorp.com"), account, new Set()), true);
+    assert.equal(senderHasStanding(flagged("stranger@salescorp.com"), account, new Set()), false);
+  });
+
+  it("routes a flagged email to action only when the sender has standing", () => {
+    const known = classifyEmail(flagged("known@vendor.com"), account, typeConfig, categories, downrank, new Set(["known@vendor.com"]));
+    assert.equal(known, "action");
+    const stranger = classifyEmail(flagged("stranger@salescorp.com"), account, typeConfig, categories, downrank, new Set());
+    assert.equal(stranger, "fyi"); // cold outreach cannot keyword itself into action
+  });
+
+  it("gates category-level urgencyRules the same way", () => {
+    const catCfg = { triageCategories: [
+      { id: "deals", label: "Deals", urgencyRules: { flags: ["underwriting"] } },
+      { id: "action", label: "Action", actionable: true },
+      { id: "fyi", label: "FYI" },
+    ] };
+    const cats = resolveCategories(catCfg, account);
+    assert.equal(classifyEmail(flagged("anyone@partner.com"), account, catCfg, cats, downrank, new Set()), "deals");
+    assert.equal(classifyEmail(flagged("stranger@salescorp.com"), account, catCfg, cats, downrank, new Set()), "fyi");
+  });
+
+  it("leaves direct prioritySender routing unaffected (no flags needed)", () => {
+    const plain = { from: "anyone@partner.com", fromName: "P", subject: "hello", preview: "", toRecipients: "me@mycorp.com" };
+    assert.equal(classifyEmail(plain, account, typeConfig, categories, downrank, new Set()), "action");
+  });
+
+  it("category prioritySenders are NOT standing-gated (explicit sender config)", () => {
+    const catCfg = { triageCategories: [
+      { id: "vip", label: "VIP", prioritySenders: [{ type: "email", value: "boss@elsewhere.com" }] },
+      { id: "action", label: "Action", actionable: true },
+      { id: "fyi", label: "FYI" },
+    ] };
+    const cats = resolveCategories(catCfg, account);
+    const m = { from: "boss@elsewhere.com", fromName: "Boss", subject: "hi", preview: "", toRecipients: "me@mycorp.com" };
+    assert.equal(classifyEmail(m, account, catCfg, cats, downrank, new Set()), "vip");
   });
 });

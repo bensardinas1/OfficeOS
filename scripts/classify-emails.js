@@ -144,6 +144,22 @@ export function matchesUrgencyFlags(email, flags) {
   });
 }
 
+/**
+ * A sender has "standing" when the user plausibly cares about them already:
+ * they're a correspondent (user has written to them), match the account's
+ * prioritySenders, or are on the user's own domain. Urgency-flag keyword
+ * promotion requires standing — cold outreach can't keyword itself into
+ * "needs a reply". (Direct prioritySender routing is unaffected.)
+ */
+export function senderHasStanding(email, account, correspondents) {
+  const fromEmail = (email.from || "").toLowerCase();
+  if (correspondents && correspondents.has(fromEmail)) return true;
+  if (account.prioritySenders?.length && matchesSender(email, account.prioritySenders)) return true;
+  const myDomain = ((account.myEmail || "").split("@")[1] || "").toLowerCase();
+  const fromDomain = fromEmail.split("@")[1] || "";
+  return Boolean(myDomain && fromDomain === myDomain);
+}
+
 const MARKETING_SUBDOMAINS = ["mail.", "email.", "news.", "marketing.", "updates.", "info.", "noreply."];
 
 export function detectBulkSignals(email, userEmail) {
@@ -186,7 +202,7 @@ export function detectBulkSignals(email, userEmail) {
   return { score: signals.length, signals };
 }
 
-export function classifyEmail(email, account, typeConfig, categories, downrankList) {
+export function classifyEmail(email, account, typeConfig, categories, downrankList, correspondents = new Set()) {
   // 1. Downrank check (type defaults + account-level) → IGNORE
   if (matchesDownrank(email, downrankList)) return "ignore";
 
@@ -209,7 +225,8 @@ export function classifyEmail(email, account, typeConfig, categories, downrankLi
     if (cat.hidden) continue;
     if (cat.downrank && matchesDownrank(email, cat.downrank)) return "ignore";
     if (cat.prioritySenders?.length && matchesSender(email, cat.prioritySenders)) return cat.id;
-    if (cat.urgencyRules?.flags?.length && matchesUrgencyFlags(email, cat.urgencyRules.flags)) return cat.id;
+    if (cat.urgencyRules?.flags?.length && senderHasStanding(email, account, correspondents)
+        && matchesUrgencyFlags(email, cat.urgencyRules.flags)) return cat.id;
   }
 
   // 3. Account-level priority senders → action / respond
@@ -218,8 +235,9 @@ export function classifyEmail(email, account, typeConfig, categories, downrankLi
     if (actionCat) return actionCat.id;
   }
 
-  // 4. Account-level urgency flags → action / respond
-  if (account.urgencyRules?.flags?.length && matchesUrgencyFlags(email, account.urgencyRules.flags)) {
+  // 4. Account-level urgency flags → action / respond (only for senders with standing)
+  if (account.urgencyRules?.flags?.length && senderHasStanding(email, account, correspondents)
+      && matchesUrgencyFlags(email, account.urgencyRules.flags)) {
     const actionCat = categories.find(c => c.id === "action" || c.id === "respond");
     if (actionCat) return actionCat.id;
   }
@@ -285,7 +303,7 @@ export function classify(emails, accountId, opts = {}) {
   const deletionCategoryIds = new Set(policy.categories);
 
   for (const email of emails) {
-    let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList);
+    let categoryId = classifyEmail(email, account, typeConfig, categories, downrankList, correspondents);
 
     const isCorrespondent = correspondents.has((email.from || "").toLowerCase());
     const alwaysDeleteApplies = alwaysDeleteList.some(r => senderRuleApplies(email, r));
