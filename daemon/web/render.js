@@ -28,6 +28,20 @@ export function renderNoticeBar(notice) {
   return `<div class="notice"><span>${esc(notice)}</span></div>`;
 }
 
+/** Config validator findings: collapsed one-liner, click to expand. Purely informational. */
+export function renderConfigWarnings(findings, open) {
+  if (!findings?.length) return "";
+  const n = findings.length;
+  const head = `<div class="cfgwarn-h" data-cfgwarn-toggle>⚠ config: ${n} issue${n === 1 ? "" : "s"}`
+    + ` <span class="chev">${open ? "▾" : "▸"}</span></div>`;
+  const list = open
+    ? `<ul class="cfgwarn-list">${findings.map(f =>
+        `<li><code>${esc(f.path)}</code> — ${esc(f.message)}${f.level === "warning" ? " (warning)" : ""}</li>`
+      ).join("")}</ul>`
+    : "";
+  return `<div class="cfgwarn">${head}${list}</div>`;
+}
+
 function actedBadge(a) {
   if (a.deleted && a.killed) return "Deleted + kill-listed";
   if (a.deleted) return "Deleted";

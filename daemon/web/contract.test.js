@@ -76,4 +76,9 @@ describe("panel render↔handler contract", () => {
     assert.match(app, /bulkBusy/, "app must drive the Working state");
     assert.match(app, /failedIds/, "runBulk must respect per-id failures");
   });
+  it("app toggles the config-warning strip render.js emits", () => {
+    assert.match(render, /data-cfgwarn-toggle/, "render must emit data-cfgwarn-toggle");
+    assert.match(app, /\[data-cfgwarn-toggle\]/, "app must select [data-cfgwarn-toggle]");
+    assert.match(app, /renderConfigWarnings/, "app must render the strip");
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, renderRunTriage, renderBulkBar, relativeTime, safeUrl } from "./render.js";
+import { renderHeader, renderItemCard, renderAccountSection, renderDetailPanel, renderUndoBar, renderNoticeBar, renderRunTriage, renderBulkBar, renderConfigWarnings, relativeTime, safeUrl } from "./render.js";
 
 const item = {
   id: "brickell:owed_risk:card_4821", account: "brickell",
@@ -436,5 +436,35 @@ describe("sender-clustered detail (handled/triage)", () => {
     const html = renderDetailPanel(tri, 0);
     assert.doesNotMatch(html, /Conversations/);
     assert.match(html, /data-select="cluster:brickellpay:/);
+  });
+});
+
+describe("renderConfigWarnings", () => {
+  const f = [
+    { level: "error", path: "companies[x].provider", message: "bad provider" },
+    { level: "warning", path: "companies[x].myEmail", message: "missing" },
+  ];
+  it("renders nothing when clean", () => {
+    assert.equal(renderConfigWarnings([], false), "");
+    assert.equal(renderConfigWarnings(undefined, false), "");
+  });
+  it("collapsed: shows the count and the toggle attr, not the details", () => {
+    const html = renderConfigWarnings(f, false);
+    assert.match(html, /config: 2 issues/);
+    assert.match(html, /data-cfgwarn-toggle/);
+    assert.doesNotMatch(html, /bad provider/);
+  });
+  it("open: lists each finding's path and message, marking warnings", () => {
+    const html = renderConfigWarnings(f, true);
+    assert.match(html, /companies\[x\]\.provider/);
+    assert.match(html, /bad provider/);
+    assert.match(html, /\(warning\)/);
+  });
+  it("singular copy for one finding, and escapes content", () => {
+    const one = [{ level: "error", path: "<p>", message: "<m>" }];
+    assert.match(renderConfigWarnings(one, false), /config: 1 issue\b/);
+    const html = renderConfigWarnings(one, true);
+    assert.doesNotMatch(html, /<p>/);
+    assert.match(html, /&lt;p&gt;/);
   });
 });

@@ -82,7 +82,9 @@ test.beforeAll(async () => {
   const dataDir = join(dir, "data"), configDir = join(dir, "config");
   mkdirSync(dataDir, { recursive: true }); mkdirSync(configDir, { recursive: true });
   writeFileSync(join(configDir, "companies.json"), JSON.stringify({ companies: [
-    { id: "brickell", name: "Brickell", accountType: "business", provider: "outlook", pollMinutes: 999 },
+    { id: "brickell", name: "Brickell", accountType: "business", provider: "outlook",
+      pollMinutes: 999, myEmail: "me@brickell.example",
+      prioritySenders: [{ type: "bogus", value: "x" }] },
   ] }), "utf-8");
   writeFileSync(join(configDir, "account-types.json"), JSON.stringify({
     business: { jobTypes: { handled: {} } },
@@ -244,4 +246,15 @@ test("multi-sender conversation: one group, bulk delete + undo via the bar", asy
   await page.reload();
   await page.locator('[data-detail="brickell:handled"]').click();
   await expect(page.locator("aside.detail .msg.acted")).toHaveCount(0);
+});
+
+test("config validator finding surfaces as an expandable panel strip", async ({ page }) => {
+  await page.goto(base);
+  const head = page.locator(".cfgwarn-h");
+  await expect(head).toContainText("config: 1 issue");
+  await expect(page.locator(".cfgwarn-list")).toHaveCount(0); // collapsed by default
+  await head.click();
+  await expect(page.locator(".cfgwarn-list li")).toContainText("prioritySenders[0].type");
+  await head.click();
+  await expect(page.locator(".cfgwarn-list")).toHaveCount(0); // collapses again
 });

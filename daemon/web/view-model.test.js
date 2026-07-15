@@ -53,6 +53,11 @@ describe("toPanelView", () => {
     assert.equal(v.needsYouCount, 0);
     assert.deepEqual(v.groups, []);
   });
+  it("passes configFindings through, defaulting to []", () => {
+    assert.deepEqual(toPanelView({ items: [], accounts: {} }).configFindings, []);
+    const f = [{ level: "error", path: "p", message: "m" }];
+    assert.deepEqual(toPanelView({ items: [], accounts: {}, configFindings: f }).configFindings, f);
+  });
 });
 
 describe("filterItems", () => {

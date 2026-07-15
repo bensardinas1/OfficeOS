@@ -70,6 +70,7 @@ export function toPanelView(model) {
     pendingCount: (model.proposals || []).filter(p => p.state === "pending").length,
     groups,
     staleAccounts,
+    configFindings: model.configFindings || [],
   };
 }
 
