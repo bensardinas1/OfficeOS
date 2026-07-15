@@ -222,8 +222,12 @@ suspicious but functional):
   `countConversations`.
 - Render/contract: warning strip renders findings + toggle attribute pair
   emitted/selected; hidden when clean.
-- e2e (fake connectors): seeded fixture includes a multi-message conversation
-  where the user replied last → asserts the count excludes it.
+- e2e: the hermetic harness's temp config gains one deliberately malformed
+  sender rule → asserts the panel's config-warning strip appears, expands on
+  click, and names the finding. (Conversation-aware counting can't be exercised
+  end-to-end in fake-connector mode — fakes never run the normalizers; the
+  seeded model is served as-is. It is covered by the unit suite plus a live
+  `--once` tick comparison at ship time.)
 
 ## Safety rails
 
