@@ -15,10 +15,20 @@
 const AUTOMATED_LOCALPART =
   /(?:^|[._+-])(?:no-?reply|do-?not-?reply|notifications?|alerts?|mailer-daemon)(?:$|[._+-])/i;
 
+// Subdomain prefixes that mark bulk/marketing senders. Single source of truth —
+// consumed here (looksAutomated) and by classify-emails' detectBulkSignals.
+export const MARKETING_SUBDOMAINS = [
+  "mail.", "email.", "news.", "marketing.", "updates.", "info.", "noreply.",
+  "notification.", "notifications.", "welcome.", "alerts.", "reply.", "e.",
+];
+
 export function looksAutomated(senderEmail, hasListUnsubscribe) {
   if (hasListUnsubscribe) return true;
-  const local = (String(senderEmail || "").split("@")[0] || "").toLowerCase();
-  return AUTOMATED_LOCALPART.test(local);
+  const addr = String(senderEmail || "").toLowerCase();
+  const local = addr.split("@")[0] || "";
+  if (AUTOMATED_LOCALPART.test(local)) return true;
+  const domain = addr.split("@")[1] || "";
+  return MARKETING_SUBDOMAINS.some(prefix => domain.startsWith(prefix));
 }
 
 export function findAccount(accounts, accountId) {

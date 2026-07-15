@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { looksAutomated, findAccount, isProtectedSender } from "../sender-guards.js";
+import { looksAutomated, findAccount, isProtectedSender, MARKETING_SUBDOMAINS } from "../sender-guards.js";
 
 describe("looksAutomated", () => {
   it("flags common automated local-parts", () => {
@@ -35,5 +35,28 @@ describe("isProtectedSender", () => {
   it("does not protect unrelated sender or missing account", () => {
     assert.equal(isProtectedSender(account, "noreply@random.com"), false);
     assert.equal(isProtectedSender(undefined, "noreply@x.com"), false);
+  });
+});
+
+describe("looksAutomated with marketing subdomains", () => {
+  it("treats marketing-subdomain senders as automated (signal in the domain)", () => {
+    for (const a of [
+      "capitalone@notification.capitalone.com",
+      "americanexpress@welcome.americanexpress.com",
+      "team@alerts.vendor.io",
+      "x@e.chase.com",
+    ]) assert.equal(looksAutomated(a, false), true, a);
+  });
+
+  it("plain domains stay human", () => {
+    for (const a of ["jane@vendor.com", "luis@brickell.example", "ben@enterprise-co.com"]) {
+      assert.equal(looksAutomated(a, false), false, a);
+    }
+  });
+
+  it("exports the shared MARKETING_SUBDOMAINS list", () => {
+    assert.ok(Array.isArray(MARKETING_SUBDOMAINS));
+    assert.ok(MARKETING_SUBDOMAINS.includes("notification."));
+    assert.ok(MARKETING_SUBDOMAINS.includes("noreply."));
   });
 });

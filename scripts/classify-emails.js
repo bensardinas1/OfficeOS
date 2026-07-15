@@ -16,6 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadCorrespondentsFile, correspondentSet } from "./correspondents.js";
+import { MARKETING_SUBDOMAINS } from "./sender-guards.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -159,8 +160,6 @@ export function senderHasStanding(email, account, correspondents) {
   const fromDomain = fromEmail.split("@")[1] || "";
   return Boolean(myDomain && fromDomain === myDomain);
 }
-
-const MARKETING_SUBDOMAINS = ["mail.", "email.", "news.", "marketing.", "updates.", "info.", "noreply."];
 
 export function detectBulkSignals(email, userEmail) {
   const signals = [];

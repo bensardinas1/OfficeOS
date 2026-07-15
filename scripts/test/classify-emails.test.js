@@ -712,3 +712,10 @@ describe("senderHasStanding — keyword promotion requires standing", () => {
     assert.equal(classifyEmail(m, account, catCfg, cats, downrank, new Set()), "vip");
   });
 });
+
+describe("detectBulkSignals uses the shared MARKETING_SUBDOMAINS list", () => {
+  it("fires marketing-subdomain for the newly shared prefixes", () => {
+    const { signals } = detectBulkSignals({ from: "x@notification.capitalone.com", subject: "s" }, "me@x.com");
+    assert.ok(signals.includes("marketing-subdomain"));
+  });
+});
