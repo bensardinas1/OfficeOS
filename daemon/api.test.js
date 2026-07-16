@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createStore } from "./store.js";
 import { createApiServer } from "./api.js";
 
-let server, base, dir, store, acks, triaged, reticked, lastTriageArgs, actionLog, lastDeleteBySender;
+let server, base, dir, store, acks, triaged, reticked, lastTriageArgs, actionLog, lastDeleteBySender, restoreCalls;
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "officeos-api-"));
@@ -26,13 +26,23 @@ before(async () => {
     return { id: emailId, body: `body of ${emailId} for ${account}` };
   };
   const deleted = [];
-  const deleteFn = async (account, ids) => { deleted.push({ account, ids }); return { trashed: ids.length, failed: 0 }; };
+  const deleteFn = async (account, ids) => {
+    deleted.push({ account, ids });
+    // "mv-" ids simulate Outlook's move re-id: the delete result carries movedIds.
+    const movedIds = Object.fromEntries(ids.filter(i => i.startsWith("mv-")).map(i => [i, `moved:${i}`]));
+    return { trashed: ids.length, failed: 0, ...(Object.keys(movedIds).length ? { movedIds } : {}) };
+  };
   const killed = [];
   const killlistFn = async (account, sender) => { killed.push({ account, sender }); return sender.includes("vip") ? { added: false, reason: "protected sender" } : { added: true, value: sender }; };
   triaged = 0; reticked = 0;
   const runTriageFn = async (account, lookbackHours) => { triaged++; lastTriageArgs = { account, lookbackHours }; return { ok: true }; };
   const onTriage = async () => { reticked++; };
-  const restoreFn = async (account, ids) => ({ restored: ids.length, failed: 0 });
+  restoreCalls = [];
+  const restoreFn = async (account, ids) => {
+    restoreCalls.push(ids);
+    const bad = ids.filter(i => i.includes("failme"));
+    return { restored: ids.length - bad.length, failed: bad.length, failedIds: bad };
+  };
   const killlistRemoveFn = async (account, sender) => (sender.includes("nope") ? { removed: false, reason: "not on the kill-list" } : { removed: true });
   const deleteBySenderFn = async (account, sender, opts) => {
     lastDeleteBySender = { account, sender, opts };
@@ -247,6 +257,32 @@ describe("action audit log", () => {
     await (await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["u1"], undoOf: del.entryId }) })).json();
     const res = await (await fetch(`${base}/actions`)).json();
     assert.equal(res.acted.u1, undefined);
+  });
+
+  it("restore translates ids through the delete entry's movedIds (Outlook move re-id)", async () => {
+    const del = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["mv-a"] }) })).json();
+    assert.equal(actionLog.recent().find(e => e.id === del.entryId).result.movedIds["mv-a"], "moved:mv-a");
+    restoreCalls.length = 0;
+    const r = await (await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["mv-a"], undoOf: del.entryId }) })).json();
+    assert.deepEqual(restoreCalls, [["moved:mv-a"]]); // restored by the CURRENT id
+    assert.equal(r.restored, 1);
+    const res = await (await fetch(`${base}/actions`)).json();
+    assert.equal(res.acted["mv-a"], undefined); // undo neutralizes under the ORIGINAL key
+  });
+
+  it("restore maps failedIds back to original ids so failed undos stay acted", async () => {
+    const del = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["mv-failme"] }) })).json();
+    const r = await (await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["mv-failme"], undoOf: del.entryId }) })).json();
+    assert.deepEqual(r.failedIds, ["mv-failme"]); // original id, not moved:mv-failme
+    const res = await (await fetch(`${base}/actions`)).json();
+    assert.equal(res.acted["mv-failme"]?.deleted, true); // failed undo does NOT clear acted
+  });
+
+  it("restore without movedIds in the entry passes ids through unchanged", async () => {
+    const del = await (await fetch(`${base}/messages/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["plain1"] }) })).json();
+    restoreCalls.length = 0;
+    await (await fetch(`${base}/messages/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "brickell", emailIds: ["plain1"], undoOf: del.entryId }) })).json();
+    assert.deepEqual(restoreCalls, [["plain1"]]);
   });
 
   it("triage appends an entry and returns its entryId", async () => {

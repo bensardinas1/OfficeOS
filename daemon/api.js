@@ -225,7 +225,20 @@ export function createApiServer(deps) {
       const account = body?.account, ids = body?.emailIds;
       if (!accounts.some(a => a.id === account) || !Array.isArray(ids) || ids.length === 0) return send(res, 400, { error: "account and non-empty emailIds required" });
       const base = { action: "restore", account, emailIds: ids, ...(body?.undoOf ? { undoOf: body.undoOf } : {}) };
-      return withAudit(res, base, () => restoreFn(account, ids));
+      // Outlook re-ids a message when delete moves it: the delete entry recorded
+      // oldId -> newId under result.movedIds. Restore by the CURRENT id, but
+      // report failedIds back in the ORIGINAL ids the panel's acted map is
+      // keyed by. Entries without movedIds (Gmail, legacy) pass through.
+      let fwd = {};
+      if (body?.undoOf && actionLog) {
+        const orig = actionLog.recent({ days: 30 }).find(e => e.id === body.undoOf);
+        fwd = orig?.result?.movedIds || {};
+      }
+      const rev = Object.fromEntries(Object.entries(fwd).map(([o, n]) => [n, o]));
+      return withAudit(res, base, async () => {
+        const r = await restoreFn(account, ids.map(id => fwd[id] || id));
+        return { ...r, failedIds: (r.failedIds || []).map(id => rev[id] || id) };
+      });
     }
     if (req.method === "POST" && path === "/senders/killlist/remove") {
       const body = await readJson(req);

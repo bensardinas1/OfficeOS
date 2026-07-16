@@ -181,10 +181,16 @@ async function perId(ids, fn) {
 export async function deleteEmails(account, ids) {
   const client = await getClient(account);
   const gmail = (account.provider || "outlook") === "gmail";
-  const { ok, failedIds } = await perId(ids, (id) => gmail
-    ? client.users.messages.trash({ userId: "me", id })
-    : client.api(`/me/messages/${id}/move`).post({ destinationId: "deleteditems" }));
-  return { trashed: ok, failed: failedIds.length, failedIds };
+  // Outlook's soft-delete is a folder MOVE, and Graph re-ids a moved message.
+  // Record oldId -> newId so restore (undo) can find the message in Deleted
+  // Items — restoring by the pre-move id silently fails. Gmail trash keeps ids.
+  const movedIds = {};
+  const { ok, failedIds } = await perId(ids, async (id) => {
+    if (gmail) { await client.users.messages.trash({ userId: "me", id }); return; }
+    const moved = await client.api(`/me/messages/${id}/move`).post({ destinationId: "deleteditems" });
+    if (moved?.id && moved.id !== id) movedIds[id] = moved.id;
+  });
+  return { trashed: ok, failed: failedIds.length, failedIds, ...(Object.keys(movedIds).length ? { movedIds } : {}) };
 }
 
 export async function restoreEmails(account, ids) {

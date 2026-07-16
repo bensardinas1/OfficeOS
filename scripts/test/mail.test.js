@@ -156,6 +156,21 @@ describe("deleteEmails / restoreEmails", () => {
     assert.equal(calls[0].b.destinationId, "deleteditems");
   });
 
+  it("outlook: records the post-move id so restore can find the message (Graph re-ids on move)", async () => {
+    const client = { api: (url) => ({ post: async () => ({ id: `new:${url.split("/")[3]}` }) }) };
+    _setClientFactoryForTest(async () => client);
+    const r = await deleteEmails(outlookAcct, ["o1", "o2"]);
+    assert.deepEqual(r.movedIds, { o1: "new:o1", o2: "new:o2" });
+    assert.equal(r.trashed, 2);
+  });
+
+  it("outlook: no movedIds key when the move response echoes the same id", async () => {
+    const client = { api: () => ({ post: async () => ({ id: "same" }) }) };
+    _setClientFactoryForTest(async () => client);
+    const r = await deleteEmails(outlookAcct, ["same"]);
+    assert.equal("movedIds" in r, false);
+  });
+
   it("gmail: trash / untrash per id", async () => {
     const trashed = [], untrashed = [];
     _setClientFactoryForTest(async () => ({ users: { messages: {
