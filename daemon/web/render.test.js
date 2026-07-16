@@ -257,6 +257,26 @@ describe("renderRunTriage", () => {
     assert.match(html, /data-triage-mode="custom"[^>]* checked/);
     assert.doesNotMatch(html.match(/id="triagedays"[^>]*>/)[0], /disabled/);
   });
+  it("shows the last successful run with scope and window in days", () => {
+    const html = renderRunTriage(false, { last: { at: "2026-07-15T15:07:00Z", action: "triage", account: null, result: { ok: true, lookbackHours: 720 } } });
+    assert.match(html, /class="triagelast"/);
+    assert.match(html, /Last triage:/);
+    assert.match(html, /· all · ok \(30d\)/);
+    assert.doesNotMatch(html, /failed/);
+  });
+  it("names the account for a per-account run and omits the window when default", () => {
+    const html = renderRunTriage(false, { last: { at: "2026-07-15T15:07:00Z", account: "brickellpay", result: { ok: true, lookbackHours: null } } });
+    assert.match(html, /· brickellpay · ok</);
+  });
+  it("shows a failed run with its error, marked and escaped", () => {
+    const html = renderRunTriage(false, { last: { at: "2026-07-15T15:07:00Z", account: null, result: { error: "<boom>" } } });
+    assert.match(html, /class="triagelast failed"/);
+    assert.match(html, /failed: &lt;boom&gt;/);
+  });
+  it("renders no last-run label without an entry or with an unparseable timestamp", () => {
+    assert.doesNotMatch(renderRunTriage(false, {}), /triagelast/);
+    assert.doesNotMatch(renderRunTriage(false, { last: { at: "not-a-date", result: { ok: true } } }), /triagelast/);
+  });
 });
 
 describe("renderBulkBar", () => {

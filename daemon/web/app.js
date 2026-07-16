@@ -9,7 +9,7 @@ import { toggle, resolveBulkPlan } from "./selection.js";
 
 const appEl = document.getElementById("app");
 let lastModel = null;
-const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, bulkBusy: null, notice: null, triaging: false, triageMode: "default", triageDays: "10", acted: {}, cfgOpen: false };
+const ui = { account: "", query: "", collapsed: new Set(), detailItemId: null, undo: null, confirm: null, busy: null, bulkBusy: null, notice: null, triaging: false, triageMode: "default", triageDays: "10", acted: {}, cfgOpen: false, lastTriage: null };
 let selected = new Set();
 const bodyCache = new Map(); // emailId -> { text } | { error }
 let desiredDetailScroll = 0; // detail-pane scroll to preserve across re-renders + async body fills
@@ -37,6 +37,9 @@ async function load() {
       kept[k] = v;
     }
     ui.acted = { ...kept, ...server };
+    // Newest triage run (entries are oldest-first) — feeds the "Last triage" label.
+    const triageRuns = (a.entries || []).filter(e => e.action === "triage");
+    ui.lastTriage = triageRuns[triageRuns.length - 1] || null;
   } catch { /* daemon without action log — panel still works */ }
   draw();
 }
@@ -61,7 +64,7 @@ function draw() {
   appEl.innerHTML =
     renderHeader(view)
     + renderConfigWarnings(view.configFindings, ui.cfgOpen)
-    + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging, { mode: ui.triageMode, days: ui.triageDays })}</div>`
+    + `<div class="filters"><input id="q" placeholder="filter…" value="${esc(ui.query)}">${renderRunTriage(ui.triaging, { mode: ui.triageMode, days: ui.triageDays, last: ui.lastTriage })}</div>`
     + renderBulkBar(selected.size, { confirm: ui.confirm, bulkBusy: ui.bulkBusy })
     + (sections || '<div class="empty">All clear.</div>')
     + detail

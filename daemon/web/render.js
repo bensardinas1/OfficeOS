@@ -306,5 +306,16 @@ export function renderRunTriage(running, triage = {}) {
     + `<label><input type="radio" name="triagewin" data-triage-mode="custom"${custom ? " checked" : ""}> last `
     + `<input type="number" id="triagedays" class="triagedays" min="1" max="365" value="${esc(days)}"${custom ? "" : " disabled"}> days</label>`
     + `</span>`;
-  return btn + win;
+  return btn + win + renderLastTriage(triage.last);
+}
+
+/** "Last triage: <local time> · <scope> · ok (Nd)" from the newest triage audit entry. */
+function renderLastTriage(last) {
+  if (!last || Number.isNaN(Date.parse(last.at))) return "";
+  const when = new Date(last.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const scope = last.account || "all";
+  const failed = Boolean(last.result?.error);
+  const windowLabel = last.result?.lookbackHours ? ` (${Math.round(last.result.lookbackHours / 24)}d)` : "";
+  const outcome = failed ? `failed: ${last.result.error}` : `ok${windowLabel}`;
+  return `<span class="triagelast${failed ? " failed" : ""}">Last triage: ${esc(when)} · ${esc(scope)} · ${esc(outcome)}</span>`;
 }

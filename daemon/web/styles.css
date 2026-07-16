@@ -11,6 +11,8 @@ body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color
 .triagewin label { display:flex; align-items:center; gap:4px; cursor:pointer; }
 .triagedays { width:52px; padding:4px 6px; border-radius:6px; border:1px solid var(--line); background:#0c111b; color:var(--txt); }
 .triagedays:disabled { opacity:.4; }
+.triagelast { color:#8a94a6; font-size:12px; white-space:nowrap; }
+.triagelast.failed { color:var(--risk); }
 .list { display:flex; flex-direction:column; gap:10px; }
 .card { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--line); border-radius:10px; padding:12px; }
 .card.at_risk { border-left-color:var(--risk); }
